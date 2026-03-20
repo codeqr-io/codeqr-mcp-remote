@@ -91,7 +91,7 @@ export function createOAuthRouter(): Router {
 
     const serverUrl = getServerUrl(req);
 
-    // Render a simple authorization page where the user enters their API key
+    // Render authorization page matching CodeQR design standards
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -100,129 +100,266 @@ export function createOAuthRouter(): Router {
   <title>Authorize CodeQR</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --codeqr-primary: #6366f1;
+      --codeqr-primary-hover: #4f46e5;
+      --codeqr-bg: #0f0f0f;
+      --codeqr-surface: #1a1a1a;
+      --codeqr-surface-elevated: #242424;
+      --codeqr-border: #2a2a2a;
+      --codeqr-text: #ffffff;
+      --codeqr-text-secondary: #a0a0a0;
+      --codeqr-text-tertiary: #6b6b6b;
+      --codeqr-input-bg: #151515;
+      --codeqr-input-border: #2a2a2a;
+      --codeqr-input-focus: #6366f1;
+      --codeqr-success: #10b981;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
-      color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--codeqr-bg);
+      color: var(--codeqr-text);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 20px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .container {
+      width: 100%;
+      max-width: 480px;
     }
     .card {
-      background: #1a1a1a;
-      border: 1px solid #333;
-      border-radius: 16px;
-      padding: 40px;
-      max-width: 440px;
-      width: 100%;
+      background: var(--codeqr-surface);
+      border: 1px solid var(--codeqr-border);
+      border-radius: 20px;
+      padding: 48px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    .logo-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 32px;
     }
     .logo {
-      font-size: 28px;
-      font-weight: 700;
-      margin-bottom: 8px;
-      color: #fff;
+      display: block;
+      height: 40px;
+      width: auto;
     }
-    .logo span { color: #6366f1; }
+    .logo img {
+      height: 100%;
+      width: auto;
+      display: block;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    .title {
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--codeqr-text);
+      margin-bottom: 12px;
+      letter-spacing: -0.3px;
+    }
     .subtitle {
-      color: #888;
-      margin-bottom: 32px;
-      font-size: 14px;
-      line-height: 1.5;
+      color: var(--codeqr-text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    .form-group {
+      margin-bottom: 24px;
     }
     label {
       display: block;
       font-size: 13px;
-      color: #aaa;
-      margin-bottom: 8px;
       font-weight: 500;
+      color: var(--codeqr-text-secondary);
+      margin-bottom: 8px;
+      letter-spacing: 0.1px;
+    }
+    .input-wrapper {
+      position: relative;
     }
     input[type="text"] {
       width: 100%;
-      padding: 12px 16px;
-      background: #111;
-      border: 1px solid #333;
-      border-radius: 8px;
-      color: #fff;
+      padding: 14px 16px;
+      background: var(--codeqr-input-bg);
+      border: 1.5px solid var(--codeqr-input-border);
+      border-radius: 12px;
+      color: var(--codeqr-text);
       font-size: 14px;
-      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
       outline: none;
-      transition: border-color 0.2s;
+      transition: all 0.2s ease;
     }
-    input[type="text"]:focus { border-color: #6366f1; }
-    input[type="text"]::placeholder { color: #555; }
-    .info {
-      margin-top: 12px;
-      padding: 12px;
-      background: #111;
-      border-radius: 8px;
-      font-size: 12px;
-      color: #888;
-      line-height: 1.5;
+    input[type="text"]:hover {
+      border-color: var(--codeqr-border);
     }
-    .info a { color: #6366f1; text-decoration: none; }
-    .info a:hover { text-decoration: underline; }
-    .actions { margin-top: 24px; display: flex; gap: 12px; }
+    input[type="text"]:focus {
+      border-color: var(--codeqr-input-focus);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    input[type="text"]::placeholder {
+      color: var(--codeqr-text-tertiary);
+    }
+    .info-box {
+      margin-top: 16px;
+      padding: 16px;
+      background: var(--codeqr-surface-elevated);
+      border: 1px solid var(--codeqr-border);
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--codeqr-text-secondary);
+      line-height: 1.6;
+    }
+    .info-box a {
+      color: var(--codeqr-primary);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .info-box a:hover {
+      color: var(--codeqr-primary-hover);
+      text-decoration: underline;
+    }
+    .actions {
+      margin-top: 32px;
+      display: flex;
+      gap: 12px;
+    }
     button {
       flex: 1;
-      padding: 12px 20px;
+      padding: 14px 24px;
       border: none;
-      border-radius: 8px;
-      font-size: 14px;
+      border-radius: 12px;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: all 0.2s ease;
+      font-family: inherit;
     }
-    button:hover { opacity: 0.9; }
     .btn-authorize {
-      background: #6366f1;
-      color: #fff;
+      background: var(--codeqr-primary);
+      color: white;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    .btn-authorize:hover {
+      background: var(--codeqr-primary-hover);
+      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+      transform: translateY(-1px);
+    }
+    .btn-authorize:active {
+      transform: translateY(0);
     }
     .btn-cancel {
-      background: #333;
-      color: #ccc;
+      background: transparent;
+      color: var(--codeqr-text-secondary);
+      border: 1.5px solid var(--codeqr-border);
+    }
+    .btn-cancel:hover {
+      background: var(--codeqr-surface-elevated);
+      border-color: var(--codeqr-border);
+      color: var(--codeqr-text);
     }
     .client-info {
-      font-size: 12px;
-      color: #666;
-      margin-top: 24px;
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--codeqr-border);
       text-align: center;
+    }
+    .client-label {
+      font-size: 12px;
+      color: var(--codeqr-text-tertiary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 500;
+    }
+    .client-id {
+      font-size: 13px;
+      color: var(--codeqr-text-secondary);
+      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
+      word-break: break-all;
+    }
+    @media (max-width: 640px) {
+      .card {
+        padding: 32px 24px;
+        border-radius: 16px;
+      }
+      .logo {
+        height: 36px;
+      }
+      .title {
+        font-size: 22px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">Code<span>QR</span></div>
-    <p class="subtitle">
-      An application is requesting access to your CodeQR account via MCP.
-      Enter your API key to authorize.
-    </p>
-
-    <form method="POST" action="${serverUrl}/oauth/authorize">
-      <input type="hidden" name="client_id" value="${escapeHtml(client_id)}">
-      <input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri)}">
-      <input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge)}">
-      <input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method)}">
-      <input type="hidden" name="state" value="${escapeHtml(state || '')}">
-      <input type="hidden" name="scope" value="${escapeHtml(scope || 'mcp:tools')}">
-
-      <label for="api_key">CodeQR API Key</label>
-      <input type="text" id="api_key" name="api_key" placeholder="cqr_live_..." required autocomplete="off">
-
-      <div class="info">
-        Get your API key at
-        <a href="https://app.codeqr.io/settings/tokens" target="_blank">app.codeqr.io/settings/tokens</a>.
-        Your key is encrypted and only used to make API calls on your behalf.
+  <div class="container">
+    <div class="card">
+      <div class="logo-container">
+        <div class="logo">
+          <img 
+            src="https://res.cloudinary.com/dhnaggn4g/image/upload/v1773973005/codeqr.io/logo/logo_dark.png" 
+            alt="CodeQR" 
+            loading="eager"
+          >
+        </div>
+      </div>
+      <div class="header">
+        <h1 class="title">Authorize Application</h1>
+        <p class="subtitle">
+          An application is requesting access to your CodeQR account via MCP.
+          Enter your API key to continue.
+        </p>
       </div>
 
-      <div class="actions">
-        <button type="button" class="btn-cancel" onclick="window.close()">Cancel</button>
-        <button type="submit" class="btn-authorize">Authorize</button>
-      </div>
-    </form>
+      <form method="POST" action="${serverUrl}/oauth/authorize">
+        <input type="hidden" name="client_id" value="${escapeHtml(client_id)}">
+        <input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri)}">
+        <input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge)}">
+        <input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method)}">
+        <input type="hidden" name="state" value="${escapeHtml(state || '')}">
+        <input type="hidden" name="scope" value="${escapeHtml(scope || 'mcp:tools')}">
 
-    <div class="client-info">
-      Requesting app: ${escapeHtml(client_id)}
+        <div class="form-group">
+          <label for="api_key">CodeQR API Key</label>
+          <div class="input-wrapper">
+            <input 
+              type="text" 
+              id="api_key" 
+              name="api_key" 
+              placeholder="codeqr_xxxx..." 
+              required 
+              autocomplete="off"
+              spellcheck="false"
+            >
+          </div>
+          <div class="info-box">
+            Get your API key at
+            <a href="https://app.codeqr.io/settings/tokens" target="_blank" rel="noopener noreferrer">
+              app.codeqr.io/settings/tokens
+            </a>.
+            Your key is encrypted and only used to make API calls on your behalf.
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn-cancel" onclick="window.close()">Cancel</button>
+          <button type="submit" class="btn-authorize">Authorize</button>
+        </div>
+      </form>
+
+      <div class="client-info">
+        <div class="client-label">Requesting Application</div>
+        <div class="client-id">${escapeHtml(client_id)}</div>
+      </div>
     </div>
   </div>
 </body>

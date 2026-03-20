@@ -18,7 +18,11 @@ declare global {
   }
 }
 
-export function requireBearerToken(req: Request, res: Response, next: NextFunction): void {
+export async function requireBearerToken(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -31,7 +35,7 @@ export function requireBearerToken(req: Request, res: Response, next: NextFuncti
   }
 
   const token = authHeader.slice('Bearer '.length);
-  const accessToken = validateAccessToken(token);
+  const accessToken = await validateAccessToken(token);
 
   if (!accessToken) {
     res.status(401).json({

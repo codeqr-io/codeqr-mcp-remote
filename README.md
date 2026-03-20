@@ -39,6 +39,29 @@ npm start
 
 ## Deploy
 
+### Vercel (Recommended)
+
+The project is configured for Vercel serverless functions:
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+
+# Set environment variables in Vercel dashboard:
+# - SERVER_URL — Your public server URL (e.g., https://mcp.codeqr.io)
+# - UPSTASH_REDIS_REST_URL — From your Upstash Redis database (REST API)
+# - UPSTASH_REDIS_REST_TOKEN — From your Upstash Redis database
+# - STAINLESS_API_KEY — Optional Stainless API key
+# - LOG_LEVEL — Log level (default: info)
+```
+
+The app will be available at `https://your-project.vercel.app`. All routes are handled by the serverless function at `api/server.ts`.
+
+**OAuth storage:** Set **Upstash Redis** (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`) so authorization codes, access tokens, and registered clients persist across serverless invocations. If these variables are omitted, the server falls back to an in-memory store (fine for local development only).
+
 ### Docker
 
 ```bash
@@ -50,6 +73,7 @@ docker run -p 3000:3000 -e SERVER_URL=https://mcp.codeqr.io codeqr-mcp-remote
 
 Set environment variables:
 - `SERVER_URL` — Your public server URL (e.g., `https://mcp.codeqr.io`)
+- `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` — Recommended for multi-instance or restarts
 - `PORT` — Port (usually set automatically by the platform)
 
 ## Connect to ChatGPT
@@ -118,7 +142,7 @@ src/
 ├── index.ts              # Express app & server startup
 ├── config.ts             # Environment configuration
 ├── oauth/
-│   ├── store.ts          # In-memory OAuth state (codes, tokens, clients)
+│   ├── store.ts          # OAuth state: Upstash Redis or in-memory fallback
 │   └── pkce.ts           # PKCE S256 verification
 ├── middleware/
 │   └── auth.ts           # Bearer token validation middleware
@@ -130,9 +154,7 @@ src/
 
 ## Production Considerations
 
-The current implementation uses **in-memory storage** for OAuth tokens and authorization codes. For production:
-
-- **Replace `oauth/store.ts`** with Redis, PostgreSQL, or DynamoDB
+- **OAuth persistence:** Configure **Upstash Redis** (see `.env.example`) for serverless and multi-instance deployments. Without it, the in-memory store is used (single process only).
 - **Add rate limiting** to the OAuth and MCP endpoints
 - **Add HTTPS** (usually handled by your reverse proxy / platform)
 - **Add monitoring** (the `/health` endpoint is ready for probes)

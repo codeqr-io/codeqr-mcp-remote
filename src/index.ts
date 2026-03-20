@@ -62,10 +62,14 @@ app.use((_req, res) => {
   });
 });
 
-// ── Start server ─────────────────────────────────────────────────────────────
+// ── Server startup (only for local development) ─────────────────────────────
 
-app.listen(config.port, () => {
-  console.log(`
+// Only start the server if running locally (not in Vercel serverless environment)
+// In Vercel, the app is imported via api/server.ts and used as a serverless function
+// Check if we're in Vercel by looking for VERCEL environment variable
+if (!process.env.VERCEL) {
+  app.listen(config.port, () => {
+    console.log(`
 ╔══════════════════════════════════════════════════════════════╗
 ║                  CodeQR Remote MCP Server                    ║
 ╠══════════════════════════════════════════════════════════════╣
@@ -86,7 +90,8 @@ app.listen(config.port, () => {
 ║    Server URL: ${(config.serverUrl || `http://localhost:${config.port}`).padEnd(43)}║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
-  `);
-});
+    `);
+  });
+}
 
 export default app;

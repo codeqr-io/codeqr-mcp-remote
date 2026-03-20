@@ -4,8 +4,10 @@
  * Environment variables:
  *   PORT                - HTTP port (default: 3000)
  *   SERVER_URL          - Public URL of this server (e.g., https://mcp.codeqr.io)
- *   STAINLESS_API_KEY   - Optional Stainless API key for code execution sandbox
- *   LOG_LEVEL           - Log level: debug, info, warn, error (default: info)
+ *   STAINLESS_API_KEY        - Optional Stainless API key for code execution sandbox
+ *   LOG_LEVEL                - Log level: debug, info, warn, error (default: info)
+ *   UPSTASH_REDIS_REST_URL   - Optional; Upstash Redis REST URL (persistent OAuth store)
+ *   UPSTASH_REDIS_REST_TOKEN - Optional; Upstash Redis REST token
  */
 
 import type { Request } from 'express';

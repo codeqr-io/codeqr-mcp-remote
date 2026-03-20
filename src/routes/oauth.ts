@@ -16,7 +16,6 @@ import {
   consumeAuthorizationCode,
   createAccessToken,
   registerClient,
-  getRegisteredClient,
 } from '../oauth/store.js';
 import { verifyCodeChallenge } from '../oauth/pkce.js';
 import { getServerUrl } from '../config.js';
@@ -26,7 +25,7 @@ export function createOAuthRouter(): Router {
 
   // ── Dynamic Client Registration (RFC 7591) ─────────────────────────────────
 
-  router.post('/register', (req: Request, res: Response) => {
+  router.post('/register', async (req: Request, res: Response) => {
     const { client_name, redirect_uris } = req.body;
 
     if (!client_name || !redirect_uris || !Array.isArray(redirect_uris)) {
@@ -37,7 +36,7 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    const client = registerClient({
+    const client = await registerClient({
       clientName: client_name,
       redirectUris: redirect_uris,
     });
@@ -234,7 +233,7 @@ export function createOAuthRouter(): Router {
 
   // ── Authorization POST (form submission) ───────────────────────────────────
 
-  router.post('/authorize', (req: Request, res: Response) => {
+  router.post('/authorize', async (req: Request, res: Response) => {
     const {
       client_id,
       redirect_uri,
@@ -254,7 +253,7 @@ export function createOAuthRouter(): Router {
     }
 
     // Create authorization code bound to the user's API key
-    const code = createAuthorizationCode({
+    const code = await createAuthorizationCode({
       clientId: client_id,
       redirectUri: redirect_uri,
       codeChallenge: code_challenge,
@@ -273,7 +272,7 @@ export function createOAuthRouter(): Router {
 
   // ── Token Endpoint ─────────────────────────────────────────────────────────
 
-  router.post('/token', (req: Request, res: Response) => {
+  router.post('/token', async (req: Request, res: Response) => {
     const { grant_type, code, redirect_uri, client_id, code_verifier } = req.body;
 
     if (grant_type !== 'authorization_code') {
@@ -293,7 +292,7 @@ export function createOAuthRouter(): Router {
     }
 
     // Consume the authorization code (one-time use)
-    const authCode = consumeAuthorizationCode(code);
+    const authCode = await consumeAuthorizationCode(code);
 
     if (!authCode) {
       res.status(400).json({
@@ -322,7 +321,7 @@ export function createOAuthRouter(): Router {
     }
 
     // Issue access token linked to the user's CodeQR API key
-    const { token, expiresIn } = createAccessToken({
+    const { token, expiresIn } = await createAccessToken({
       clientId: authCode.clientId,
       codeqrApiKey: authCode.codeqrApiKey,
       scope: authCode.scope,

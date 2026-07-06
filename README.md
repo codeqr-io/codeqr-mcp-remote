@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/codeqr-io-codeqr-mcp-remote-badge.png)](https://mseep.ai/app/codeqr-io-codeqr-mcp-remote)
+
 # CodeQR Remote MCP Server
 
 Remote MCP server for [CodeQR](https://codeqr.io) with OAuth 2.0 authentication. Compatible with ChatGPT, OpenAI Agents SDK, Grok (xAI), and any MCP client supporting Streamable HTTP transport.

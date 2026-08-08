@@ -16,6 +16,12 @@
  * enum lists the right values, or whether the right properties are marked
  * required — `tool-schemas.test.ts` covers those at runtime.
  *
+ * `@codeqr/ts` is pinned to an exact version in package.json so that upgrading
+ * is a commit somebody makes on purpose, and this file is what tells them
+ * whether the new version moved anything underneath the tools. A caret range
+ * would not help: in 0.x semver it never crosses a minor anyway, which is how
+ * the dependency sat five releases behind without anyone noticing.
+ *
  * The runtime assertion at the bottom is deliberate: it keeps the property
  * lists honest, because a list that drifted out of step with the real schema
  * would still typecheck while proving nothing.

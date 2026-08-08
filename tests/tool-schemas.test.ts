@@ -159,12 +159,25 @@ describe('schema structure', () => {
     }
   });
 
-  it('describes every property', () => {
+  it('describes every property, including the nested ones', () => {
     // The description is what the model reads to decide what to pass. An
-    // undescribed property is one it will guess at.
+    // undescribed property is one it will guess at — and the QR payloads are
+    // where guessing is most expensive, because a wrong key saves happily and
+    // encodes nothing. So this recurses rather than stopping at the top level.
+    const walk = (schema: unknown, path: string): void => {
+      const node = schema as {
+        description?: string;
+        properties?: Record<string, unknown>;
+      };
+      expect(node.description, path).toBeTruthy();
+      for (const [key, child] of Object.entries(node.properties ?? {})) {
+        walk(child, `${path}.${key}`);
+      }
+    };
+
     for (const t of TOOLS) {
       for (const [key, schema] of Object.entries(t.inputSchema.properties ?? {})) {
-        expect((schema as { description?: string }).description, `${t.name}.${key}`).toBeTruthy();
+        walk(schema, `${t.name}.${key}`);
       }
     }
   });
@@ -236,12 +249,58 @@ describe('enums match the values the API accepts', () => {
     ]);
   });
 
-  it('offers only the QR type it can actually build a payload for', () => {
-    // Every other type — wifi, vcard, whatsapp, pix — carries its content in a
-    // payload field of its own, and none of those are exposed yet. Listing the
-    // types without the payloads advertised nine capabilities that returned
-    // 400. Widen this only alongside the matching properties.
-    expect(properties('create_qrcode').type?.enum).toEqual(['url']);
+  it('offers every QR type it can actually build a payload for', () => {
+    expect(properties('create_qrcode').type?.enum).toEqual([
+      'url',
+      'text',
+      'email',
+      'phone',
+      'sms',
+      'wifi',
+      'vcard',
+      'crypto',
+      'whatsapp',
+    ]);
+  });
+
+  it('offers no QR type that is broken in the CodeQR app', () => {
+    // pix   — a dynamic code is absent from the middleware's display-page list
+    //         and redirects to the site root instead of paying
+    // geo   — the constructor reads `geo.latLog`, the country-targeting map,
+    //         while the coordinates live in `latlog`; encodes geo:undefined
+    // facetime — no constructor branch at all; encodes an empty string
+    //
+    // All three need a fix in the app. Offering them here would repeat exactly
+    // the mistake this tool was corrected for: advertising silence.
+    const offered = properties('create_qrcode').type?.enum ?? [];
+    for (const broken of ['pix', 'geo', 'facetime', 'latlog']) {
+      expect(offered, broken).not.toContain(broken);
+    }
+  });
+
+  it('accepts each type’s payload on both create and update', () => {
+    // A wifi or vcard code that can be created and never edited defeats the
+    // point of it being dynamic.
+    for (const payload of ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp']) {
+      expect(Object.keys(properties('create_qrcode')), payload).toContain(payload);
+      expect(Object.keys(properties('update_qrcode')), payload).toContain(payload);
+    }
+  });
+
+  it('names the payload fields the constructor actually reads', () => {
+    // These three are stored under names nobody would guess, and guessing wrong
+    // saves a record that encodes nothing. Pinned so a rename upstream has to
+    // be noticed here rather than in a scanner that reads a blank code.
+    const props = properties('create_qrcode') as Record<
+      string,
+      { properties?: Record<string, unknown>; required?: string[] }
+    >;
+    expect(Object.keys(props.email?.properties ?? {})).toContain('cco');
+    expect(Object.keys(props.sms?.properties ?? {})).toContain('subject');
+    expect(Object.keys(props.crypto?.properties ?? {})).toContain('email');
+    // And the two the API itself rejects when missing.
+    expect(props.wifi?.required).toEqual(['ssid']);
+    expect(props.whatsapp?.required).toEqual(['number']);
   });
 
   it('constrains the analytics event and groupBy', () => {

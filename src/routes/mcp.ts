@@ -48,6 +48,139 @@ const REWRITES_PUBLIC = { readOnlyHint: false, openWorldHint: true, destructiveH
 /** Writes only to private workspace state — nothing changes on the open web. */
 const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
 
+/**
+ * What a QR code can encode, and the payload each kind needs.
+ *
+ * CodeQR stores these payloads as free-form JSON, and the SDK types them as
+ * `Record<string, string>` — so nothing upstream tells a model which keys to
+ * fill. Get a key wrong and the record saves, the code renders, and it encodes
+ * an empty or malformed value. There is no error to notice.
+ *
+ * The field names below are therefore not guesses: each one is what
+ * `qrCodeConstructor` actually reads when it builds the encoded string. Three
+ * of them are named in ways nobody would guess, and are called out where they
+ * appear — `email.cco`, `sms.subject` and `crypto.email`.
+ *
+ * Three of CodeQR's types are deliberately absent, and this is the reason:
+ *
+ *   pix       — the payload builds correctly, but a dynamic Pix code is not in
+ *               the middleware's display-page list, so scanning one redirects
+ *               to the site root instead of paying anything.
+ *   geo       — the constructor reads `geo.latLog`, while `geo` holds the
+ *               country-targeting map and the coordinates live in `latlog`.
+ *               Every geo code encodes `geo:undefined`.
+ *   facetime  — the constructor has no branch for it at all, so it falls
+ *               through and encodes an empty string.
+ *
+ * All three need a fix in the CodeQR app, not here. Offering them would repeat
+ * the mistake this file just corrected: advertising a capability that answers
+ * with silence.
+ */
+const QRCODE_CONTENT_TYPES = [
+  'url',
+  'text',
+  'email',
+  'phone',
+  'sms',
+  'wifi',
+  'vcard',
+  'crypto',
+  'whatsapp',
+] as const;
+
+const QRCODE_PAYLOAD_PROPERTIES = {
+  url: { type: 'string', description: 'For type "url": the destination the code should lead to' },
+  text: { type: 'string', description: 'For type "text": the plain text to encode' },
+  phone: { type: 'string', description: 'For type "phone": the number to call, e.g. "+5511999999999"' },
+  email: {
+    type: 'object' as const,
+    description: 'For type "email": the message a scan should open',
+    properties: {
+      email: { type: 'string', description: 'Recipient address' },
+      subject: { type: 'string', description: 'Subject line' },
+      body: { type: 'string', description: 'Message body' },
+      cc: { type: 'string', description: 'CC address' },
+      // Not a typo to be fixed: the stored field is `cco`, from the Portuguese
+      // "com cópia oculta". Sending `bcc` writes a key nothing reads.
+      cco: { type: 'string', description: 'BCC address. The field is named cco, not bcc' },
+    },
+    required: ['email'],
+  },
+  sms: {
+    type: 'object' as const,
+    description: 'For type "sms": the message a scan should compose',
+    properties: {
+      tel: { type: 'string', description: 'Recipient number' },
+      // Named `subject`, used as the body — SMS has no subject line.
+      subject: { type: 'string', description: 'The message text. Despite the name, this is the body, not a subject' },
+    },
+    required: ['tel'],
+  },
+  wifi: {
+    type: 'object' as const,
+    description: 'For type "wifi": the network a scan should join',
+    properties: {
+      ssid: { type: 'string', description: 'Network name' },
+      password: { type: 'string', description: 'Network password' },
+      // The dashboard writes "nome" for an open network, which is neither a
+      // valid WIFI-spec value nor understood by scanners. Offering the correct
+      // ones here rather than matching that.
+      encryption: {
+        type: 'string',
+        enum: ['WPA', 'WPA2', 'WEP', 'nopass'],
+        description: 'Security type. Use "nopass" for an open network',
+      },
+      isHidden: { type: 'boolean', description: 'Whether the network does not broadcast its name' },
+    },
+    required: ['ssid'],
+  },
+  vcard: {
+    type: 'object' as const,
+    // city, state, zipcode and country are only written when `address` is
+    // present — they are assembled into one ADR line. Sending a city on its own
+    // silently drops it.
+    description:
+      'For type "vcard": the contact card a scan should offer to save. City, state, zipcode and country are only encoded when address is also given',
+    properties: {
+      name: { type: 'string', description: 'First name' },
+      surname: { type: 'string', description: 'Last name' },
+      phone: { type: 'string', description: 'Phone number' },
+      email: { type: 'string', description: 'Email address' },
+      website: { type: 'string', description: 'Website URL' },
+      address: { type: 'string', description: 'Street address' },
+      city: { type: 'string', description: 'City (requires address)' },
+      state: { type: 'string', description: 'State or region (requires address)' },
+      zipcode: { type: 'string', description: 'Postal code (requires address)' },
+      country: { type: 'string', description: 'Country (requires address)' },
+    },
+  },
+  crypto: {
+    type: 'object' as const,
+    description: 'For type "crypto": the payment request a scan should open',
+    properties: {
+      cryptocurrency: { type: 'string', description: 'Currency scheme, e.g. "bitcoin" or "ethereum"' },
+      // The wallet address is stored in a field called `email`. A model asked
+      // for a crypto QR code will reach for `address` or `wallet` and write a
+      // key that is never read.
+      email: { type: 'string', description: 'The destination WALLET ADDRESS. The field is named email, but no email goes here' },
+      amount: { type: 'string', description: 'Amount to request' },
+      message: { type: 'string', description: 'Note attached to the request' },
+    },
+  },
+  whatsapp: {
+    type: 'object' as const,
+    description: 'For type "whatsapp": the conversation a scan should open',
+    properties: {
+      number: {
+        type: 'string',
+        description: 'Number in E.164 without "+" or separators, e.g. "5511999999999". The API rejects anything else',
+      },
+      message: { type: 'string', description: 'Message pre-filled in the chat (optional, max 1000 characters)' },
+    },
+    required: ['number'],
+  },
+} as const;
+
 export const TOOLS = [
   {
     name: 'create_link',
@@ -143,26 +276,19 @@ export const TOOLS = [
     name: 'create_qrcode',
     annotations: PUBLISHES,
     description:
-      'Create a dynamic QR code. The code encodes a short link rather than the destination itself, so the destination can be changed later with update_qrcode without reprinting the code. Scans are recorded.',
+      'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        url: { type: 'string', description: 'The destination the QR code should lead to' },
-        // Required by the API and by the SDK's own types, and it was missing:
-        // every call this tool made was rejected before reaching creation. The
-        // `as any` in the handler is what kept the compiler quiet about it.
-        // Narrowed to 'url' on purpose. CodeQR supports text, email, wifi,
-        // vcard, whatsapp, pix and more, but each of those carries its content
-        // in a payload field of its own — `wifi: { ssid, encryption, ... }` —
-        // and none of those fields is exposed here yet. Offering the types
-        // without the payloads meant every non-url choice reached the API with
-        // nothing to encode and came back a 400, so the enum advertised nine
-        // capabilities the tool could not perform. Widen this only together
-        // with the matching payload properties.
+        ...QRCODE_PAYLOAD_PROPERTIES,
+        // `type` is required by the API and has no default of its own. The
+        // handler fills 'url' when it is omitted, which keeps the common
+        // "make a QR code for this link" call working.
         type: {
           type: 'string',
-          enum: ['url'],
-          description: 'What kind of content the QR code encodes. Only "url" is supported here.',
+          enum: QRCODE_CONTENT_TYPES,
+          description:
+            'What kind of content the QR code encodes. Defaults to "url". Whatever you choose, fill the payload field of the same name.',
         },
         domain: { type: 'string', description: 'Domain for the underlying short link (optional)' },
         key: { type: 'string', description: 'Custom slug for the underlying short link (optional, auto-generated if omitted)' },
@@ -193,12 +319,15 @@ export const TOOLS = [
     name: 'update_qrcode',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change where a dynamic QR code leads, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new destination. This does NOT apply to static QR codes, which encode the destination directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old destination forever. Check whether the code is static before promising the change reaches printed material.',
+      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the code\'s type — url for a link, wifi for network credentials, and so on. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         qrcodeId: { type: 'string', description: 'The QR code ID to update' },
-        url: { type: 'string', description: 'New destination URL (optional)' },
+        // The same payloads create accepts. Without them, a wifi or vcard code
+        // could be created and then never edited — the one thing a dynamic
+        // code exists to allow.
+        ...QRCODE_PAYLOAD_PROPERTIES,
         fgColor: { type: 'string', description: 'New foreground color hex (optional)' },
         bgColor: { type: 'string', description: 'New background color hex (optional)' },
         archived: { type: 'boolean', description: 'Archive status (optional)' },

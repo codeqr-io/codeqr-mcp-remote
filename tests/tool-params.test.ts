@@ -72,9 +72,10 @@ const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
 // is stricter than the route, which is why the handler casts.
 const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
 const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments'] as const;
-const CREATE_QRCODE = ['url', 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
+const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
+const CREATE_QRCODE = [...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
 const LIST_QRCODES = ['page'] as const;
-const UPDATE_QRCODE = ['url', 'fgColor', 'bgColor', 'archived'] as const;
+const UPDATE_QRCODE = [...QRCODE_PAYLOADS, 'fgColor', 'bgColor', 'archived'] as const;
 // linkId and qrcodeId are genuine filters here, not path identifiers — the
 // analytics endpoint takes them in the query.
 const GET_ANALYTICS = ['event', 'groupBy', 'linkId', 'qrcodeId', 'domain', 'key', 'interval'] as const;
@@ -134,10 +135,14 @@ type _Color = Assert<Same<(typeof TAG_COLOR)[number], NonNullable<Codeqr.TagCrea
 // Narrowed on purpose, so only one direction is checked — but that direction
 // matters: it catches the SDK dropping a value we still advertise.
 //
-//   qrcode type — every other type needs payload fields this server does not expose yet
+//   qrcode type — pix, geo and facetime are broken in the CodeQR app itself:
+//                 a dynamic pix code is missing from the middleware's
+//                 display-page list and redirects to the site root, the geo
+//                 constructor reads the country-targeting map instead of the
+//                 coordinates, and facetime has no constructor branch at all
 //   analytics event — 'views' belongs to Pages, which this server does not reach
 //   analytics groupBy — 'clicks', 'scans' and 'views' are accepted upstream and answer 500
-const QRCODE_TYPE = ['url'] as const;
+const QRCODE_TYPE = ['url', 'text', 'email', 'phone', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
 const ANALYTICS_EVENT = ['clicks', 'scans', 'leads', 'sales', 'composite'] as const;
 const ANALYTICS_GROUP_BY = [
   'count', 'timeseries', 'countries', 'cities', 'devices', 'browsers', 'os', 'referers',

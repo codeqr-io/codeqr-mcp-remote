@@ -23,7 +23,10 @@ import type { Request } from 'express';
  * in both places — and the MCP handshake had drifted to reporting the
  * `@codeqr/ts` version instead of this one.
  *
- * Keep in step with the `version` field in package.json.
+ * Keep in step with the `version` field in package.json and in server.json —
+ * the registry refuses to republish a version it already has, so a partial
+ * bump either fails at publish time or ships a mismatched entry.
+ * tests/server-json.test.ts fails when the three drift apart.
  */
 export const SERVER_VERSION = '0.1.0';
 

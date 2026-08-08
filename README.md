@@ -201,6 +201,25 @@ curl "https://registry.modelcontextprotocol.io/v0/servers?search=codeqr"
 If the key is ever rotated, **remove the old TXT record** — a stale one is tried
 first and makes verification fail.
 
+### Directory listings
+
+Aggregators crawl the ecosystem and list servers whether or not anyone claims them,
+so an unclaimed entry still exists — as a bot's guess at what this server does.
+Claiming replaces the guess and unlocks editing the name and description a reader
+sees. None of this is done by merging a file; each one is a one-time action on the
+aggregator's own site.
+
+| Directory | How ownership is claimed | Status |
+|-----------|--------------------------|--------|
+| [Official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp-publisher` + DNS, as above | listed |
+| [Glama](https://glama.ai) | `glama.json` in this repo, then run the claim flow once from an account listed in `maintainers` | file in repo; claim pending |
+| [Smithery](https://smithery.ai) | `smithery mcp publish https://mcp.codeqr.io/mcp -n <org>/<name>` | pending |
+| [PulseMCP](https://pulsemcp.com) | hand-reviewed submission on their site | pending |
+| [mcp.so](https://mcp.so) | submission form / GitHub issue | pending |
+
+The GitHub OAuth route Glama also offers only associates repos under a **personal**
+account, which this repo is not — it belongs to the `codeqr-io` org. Hence the file.
+
 ## License
 
 MIT — [CodeQR](https://codeqr.io)

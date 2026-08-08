@@ -25,6 +25,13 @@ import type { Request, Response } from 'express';
  *   destructiveHint — deletes, overwrites, or causes an effect that cannot be
  *                     taken back.
  *
+ * The reading of `openWorldHint` above is the directory's, not the MCP spec's.
+ * The spec frames it as whether the tool's domain of interaction is open or
+ * closed, and defaults it to true — by which every tool here would be true,
+ * since all of them call an external API, and the flag would carry no signal.
+ * The directory asks instead whether the write becomes publicly visible, and
+ * that is the axis encoded here, because that is what the reviewer checks.
+ *
  * Why `update_link` and `update_qrcode` are destructive: both overwrite the
  * destination of a code that may already be printed on physical material or
  * handed out. The record is restorable, the printed sheet is not — so the
@@ -92,7 +99,7 @@ const TOOLS = [
     name: 'update_link',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change where an existing short link points, without changing the link itself. Anything already shared keeps working and now leads to the new destination.',
+      'Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change `key`, which rewrites the link itself and breaks every copy already in circulation.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -127,6 +134,14 @@ const TOOLS = [
       type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'The destination the QR code should lead to' },
+        // Required by the API and by the SDK's own types, and it was missing:
+        // every call this tool made was rejected before reaching creation. The
+        // `as any` in the handler is what kept the compiler quiet about it.
+        type: {
+          type: 'string',
+          enum: ['url', 'text', 'email', 'wifi', 'phone', 'vcard', 'crypto', 'sms', 'facetime', 'latlog'],
+          description: 'What kind of content the QR code encodes. Defaults to "url".',
+        },
         domain: { type: 'string', description: 'Domain for the underlying short link (optional)' },
         key: { type: 'string', description: 'Custom slug for the underlying short link (optional, auto-generated if omitted)' },
         size: { type: 'number', description: 'Size in pixels (optional)' },
@@ -148,24 +163,15 @@ const TOOLS = [
       },
     },
   },
-  {
-    name: 'get_qrcode_info',
-    annotations: READ_ONLY,
-    description: 'Get detailed information about a specific QR code, including its current destination and scan count',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        qrcodeId: { type: 'string', description: 'The QR code ID' },
-        domain: { type: 'string', description: 'Domain (alternative to qrcodeId, use with key)' },
-        key: { type: 'string', description: 'Slug/key (use with domain)' },
-      },
-    },
-  },
+  // A `get_qrcode_info` tool was drafted here and pulled back out: the SDK's
+  // retrieve() takes domain + key + projectSlug, not the id this server has,
+  // so the tool would only ever have failed. `list_qrcodes` already returns
+  // the id, destination and scan count, which is what it was there for.
   {
     name: 'update_qrcode',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change where an existing QR code leads, without reprinting it. Codes already printed or distributed keep working and now lead to the new destination. This is the reason to use a dynamic QR code instead of a generated image.',
+      'Change where a dynamic QR code leads, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new destination. This does NOT apply to static QR codes, which encode the destination directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old destination forever. Check whether the code is static before promising the change reaches printed material.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -313,13 +319,13 @@ async function handleToolCall(
         result = await client.links.delete(args.linkId as string);
         break;
       case 'create_qrcode':
-        result = await client.qrcodes.create(args as any);
+        // `type` is required upstream with no default of its own. Filling it
+        // here keeps the common "make a QR code for this URL" call working
+        // instead of failing validation before anything is created.
+        result = await client.qrcodes.create({ type: 'url', ...args } as any);
         break;
       case 'list_qrcodes':
         result = await client.qrcodes.list(args as any);
-        break;
-      case 'get_qrcode_info':
-        result = await client.qrcodes.retrieve(args as any);
         break;
       case 'update_qrcode': {
         const { qrcodeId, ...params } = args as any;

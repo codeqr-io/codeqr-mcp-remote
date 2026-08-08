@@ -60,8 +60,12 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * page a dynamic scan lands on actually reads. That page, not
  * `qrCodeConstructor`, is the reference — the constructor encodes content into
  * the printed pattern, which is the static path, and this tool only creates
- * dynamic codes. The two agree everywhere except `crypto`, where the constructor
- * reads `email` and the page reads `address`.
+ * dynamic codes. Where the two disagree, the page wins: it reads
+ * `crypto.address` while the constructor reads `crypto.email`, and it renders a
+ * second work number from `vcard.telephone` that the constructor has no branch
+ * for. Only the first of those can produce a wrong result, since `telephone` is
+ * an extra field rather than a rival name for the same one — it is simply not
+ * offered here yet.
  *
  * Three names would not be guessed by anyone, and are called out where they
  * appear — `email.cco`, `sms.subject` and `crypto.address`.
@@ -402,11 +406,23 @@ export const TOOLS = [
         // date reads a property off undefined. The two branches that would
         // return before that point are keyed on groupBy 'clicks' and 'scans' —
         // the two values this tool deliberately withholds, because they answer
-        // 500 as well. 'all' covers the same intent and works.
+        // 500 as well.
+        //
+        // The remaining eight all resolve, but the long ones are gated by plan
+        // and answer 403 rather than data — so the description names the limits
+        // instead of leaving the agent to discover them one rejection at a
+        // time. `get_workspace` returns the plan, which is what makes the
+        // fallback decidable before the call.
+        //
+        // Worth recording: 'all_unfiltered' appears in none of the three plan
+        // lists, so it is the one value that walks past the gate on any plan.
+        // Today it crashes before that matters. Fixing the 500 upstream without
+        // adding it to the lists would turn it into a plan-limit bypass.
         interval: {
           type: 'string',
           enum: ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all'],
-          description: 'Time window to report over (optional, defaults to 24h)',
+          description:
+            'Time window to report over (optional, defaults to 24h). Long windows are limited by plan and return 403 above the limit: free stops at 30d, starter at 90d, pro at 1y, business has no limit.',
         },
       },
       required: ['event', 'groupBy'],

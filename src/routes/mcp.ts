@@ -10,6 +10,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
+import { getWorkspace } from '../codeqr/workspace.js';
+import { SERVER_VERSION } from '../config.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -46,7 +48,7 @@ const REWRITES_PUBLIC = { readOnlyHint: false, openWorldHint: true, destructiveH
 /** Writes only to private workspace state — nothing changes on the open web. */
 const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
 
-const TOOLS = [
+export const TOOLS = [
   {
     name: 'create_link',
     annotations: PUBLISHES,
@@ -81,18 +83,24 @@ const TOOLS = [
       },
     },
   },
+  // `domain` and `key` are both required, and neither `linkId` nor `externalId`
+  // is a substitute: the API requires the pair. The previous schema offered all
+  // four as interchangeable optionals, so the natural call — `linkId` alone —
+  // could only ever fail. `projectSlug` is required too, and is resolved from
+  // the credential rather than asked for, because nothing an MCP client knows
+  // could supply it.
   {
     name: 'get_link_info',
     annotations: READ_ONLY,
-    description: 'Get detailed information about a specific short link',
+    description:
+      'Get detailed information about one short link, identified by its domain and slug together (for codeqr.link/github: domain "codeqr.link", key "github"). To find a link when you only know part of it, use list_links with a search term first.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        linkId: { type: 'string', description: 'The link ID' },
-        domain: { type: 'string', description: 'Domain (alternative to linkId)' },
-        key: { type: 'string', description: 'Slug/key (use with domain)' },
-        externalId: { type: 'string', description: 'External ID (alternative to linkId)' },
+        domain: { type: 'string', description: 'The link domain, e.g. "codeqr.link"' },
+        key: { type: 'string', description: 'The link slug, e.g. "github"' },
       },
+      required: ['domain', 'key'],
     },
   },
   {
@@ -137,10 +145,18 @@ const TOOLS = [
         // Required by the API and by the SDK's own types, and it was missing:
         // every call this tool made was rejected before reaching creation. The
         // `as any` in the handler is what kept the compiler quiet about it.
+        // Narrowed to 'url' on purpose. CodeQR supports text, email, wifi,
+        // vcard, whatsapp, pix and more, but each of those carries its content
+        // in a payload field of its own — `wifi: { ssid, encryption, ... }` —
+        // and none of those fields is exposed here yet. Offering the types
+        // without the payloads meant every non-url choice reached the API with
+        // nothing to encode and came back a 400, so the enum advertised nine
+        // capabilities the tool could not perform. Widen this only together
+        // with the matching payload properties.
         type: {
           type: 'string',
-          enum: ['url', 'text', 'email', 'wifi', 'phone', 'vcard', 'crypto', 'sms', 'facetime', 'latlog'],
-          description: 'What kind of content the QR code encodes. Defaults to "url".',
+          enum: ['url'],
+          description: 'What kind of content the QR code encodes. Only "url" is supported here.',
         },
         domain: { type: 'string', description: 'Domain for the underlying short link (optional)' },
         key: { type: 'string', description: 'Custom slug for the underlying short link (optional, auto-generated if omitted)' },
@@ -223,7 +239,15 @@ const TOOLS = [
         qrcodeId: { type: 'string', description: 'Filter by QR code ID (optional)' },
         domain: { type: 'string', description: 'Filter by domain (optional)' },
         key: { type: 'string', description: 'Filter by slug/key, use with domain (optional)' },
-        interval: { type: 'string', description: 'Time interval: 24h, 7d, 30d, 90d (optional)' },
+        // Enumerated rather than free text: the API rejects anything outside
+        // this set, and the old description named only four of the nine, so a
+        // reasonable guess like "6m" or "last month" failed at the API instead
+        // of at the schema.
+        interval: {
+          type: 'string',
+          enum: ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all', 'all_unfiltered'],
+          description: 'Time window to report over (optional, defaults to 24h)',
+        },
       },
       required: ['event', 'groupBy'],
     },
@@ -232,13 +256,27 @@ const TOOLS = [
     name: 'list_domains',
     annotations: READ_ONLY,
     description: 'List custom domains configured in your workspace',
-    inputSchema: { type: 'object' as const, properties: {} },
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: 'Search keyword (optional)' },
+        page: { type: 'number', description: 'Page number (optional)' },
+        pageSize: { type: 'number', description: 'Results per page (optional)' },
+      },
+    },
   },
   {
     name: 'list_tags',
     annotations: READ_ONLY,
     description: 'List all tags in your workspace',
-    inputSchema: { type: 'object' as const, properties: {} },
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        search: { type: 'string', description: 'Search keyword (optional)' },
+        page: { type: 'number', description: 'Page number (optional)' },
+        pageSize: { type: 'number', description: 'Results per page (optional)' },
+      },
+    },
   },
   {
     name: 'create_tag',
@@ -249,51 +287,63 @@ const TOOLS = [
       type: 'object' as const,
       properties: {
         name: { type: 'string', description: 'Tag name' },
-        color: { type: 'string', description: 'Tag color (optional)' },
+        // The API accepts these seven and rejects everything else. As free
+        // text this silently produced 400s for any plausible colour name.
+        color: {
+          type: 'string',
+          enum: ['red', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown'],
+          description: 'Tag color (optional)',
+        },
       },
       required: ['name'],
     },
   },
+  // Answers "which workspace am I acting on, and what may it do" in one call.
+  // Worth its own tool because plan gates several behaviours the agent would
+  // otherwise discover by taking a 403 halfway through a batch.
   {
-    name: 'track_lead',
-    // Records a conversion event against our own analytics. Nothing is published.
-    annotations: PRIVATE_WRITE,
-    description: 'Track a lead conversion attributed to a short link',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        clickId: { type: 'string', description: 'The click ID from the link visit' },
-        eventName: { type: 'string', description: 'Conversion event name' },
-        customerId: { type: 'string', description: 'Your customer identifier' },
-        customerName: { type: 'string', description: 'Customer name (optional)' },
-        customerEmail: { type: 'string', description: 'Customer email (optional)' },
-      },
-      required: ['clickId', 'eventName', 'customerId'],
-    },
+    name: 'get_workspace',
+    annotations: READ_ONLY,
+    description:
+      'Get the CodeQR workspace this connection is authorized for, including its name, slug and plan. Useful before creating in bulk or using a feature the plan may not include.',
+    inputSchema: { type: 'object' as const, properties: {} },
   },
-  {
-    name: 'track_sale',
-    annotations: PRIVATE_WRITE,
-    description: 'Track a sale conversion attributed to a short link',
-    inputSchema: {
-      type: 'object' as const,
-      properties: {
-        clickId: { type: 'string', description: 'The click ID from the link visit' },
-        eventName: { type: 'string', description: 'Sale event name' },
-        customerId: { type: 'string', description: 'Your customer identifier' },
-        amount: { type: 'number', description: 'Amount in cents (e.g., 4999 for $49.99)' },
-        currency: { type: 'string', description: 'Currency code (e.g., usd)' },
-        paymentProcessor: { type: 'string', description: 'Payment processor name' },
-      },
-      required: ['clickId', 'eventName', 'customerId', 'amount'],
-    },
-  },
+  // track_lead and track_sale used to sit here. Two independent defects made
+  // them unusable, and only one was fixable:
+  //
+  //   - they sent `customerId`, a field the API does not define; the required
+  //     one is `customerExternalId`, so every call was rejected;
+  //   - they need the `conversions.write` scope, which CodeQR grants to
+  //     workspace owners only, and whose presence in an authorization request
+  //     makes CodeQR reject that request outright for everyone else.
+  //
+  // The second is the blocking one: asking for the scope would stop members
+  // connecting at all. Restoring the tools means giving conversions their own
+  // consent step, not editing this list.
 ];
 
 // ── Tool Handler ─────────────────────────────────────────────────────────────
 
+/**
+ * Narrow the untyped MCP arguments to the SDK's parameter type for a call.
+ *
+ * The client validates arguments against the tool's `inputSchema` before we see
+ * them, so the shape is already checked at runtime; what this adds is a named
+ * type at the call site instead of `any`. That matters because `any` is what
+ * let `track_lead` ship for months sending `customerId`, a field the API never
+ * had — the compiler had nothing to compare it against.
+ *
+ * The compiler still cannot tell whether a schema and the SDK have drifted
+ * apart. `tests/tool-schemas.test.ts` is what covers that, and it is the thing
+ * to update when the SDK changes.
+ */
+function asParams<T>(args: Record<string, unknown>): T {
+  return args as T;
+}
+
 async function handleToolCall(
   client: Codeqr,
+  apiKey: string,
   name: string,
   args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
@@ -302,17 +352,29 @@ async function handleToolCall(
 
     switch (name) {
       case 'create_link':
-        result = await client.links.create(args as any);
+        result = await client.links.create(asParams<Codeqr.LinkCreateParams>(args));
         break;
       case 'list_links':
-        result = await client.links.list(args as any);
+        result = await client.links.list(asParams<Codeqr.LinkListParams>(args));
         break;
-      case 'get_link_info':
-        result = await client.links.retrieveInfo(args as any);
+      case 'get_link_info': {
+        // `projectSlug` is required by the API and is not something any MCP
+        // client could know, so it comes from the credential rather than the
+        // caller. Without this the tool could not build a valid request at all.
+        const { slug } = await getWorkspace(apiKey);
+        result = await client.links.retrieveInfo({
+          domain: args.domain as string,
+          key: args.key as string,
+          projectSlug: slug,
+        });
         break;
+      }
       case 'update_link': {
-        const { linkId, ...params } = args as any;
-        result = await client.links.update(linkId, params);
+        const { linkId, ...params } = args;
+        result = await client.links.update(
+          linkId as string,
+          asParams<Codeqr.LinkUpdateParams>(params),
+        );
         break;
       }
       case 'delete_link':
@@ -322,36 +384,41 @@ async function handleToolCall(
         // `type` is required upstream with no default of its own. Filling it
         // here keeps the common "make a QR code for this URL" call working
         // instead of failing validation before anything is created.
-        result = await client.qrcodes.create({ type: 'url', ...args } as any);
+        result = await client.qrcodes.create(
+          asParams<Codeqr.QrcodeCreateParams>({ type: 'url', ...args }),
+        );
         break;
       case 'list_qrcodes':
-        result = await client.qrcodes.list(args as any);
+        result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(args));
         break;
       case 'update_qrcode': {
-        const { qrcodeId, ...params } = args as any;
-        result = await client.qrcodes.update(qrcodeId, params);
+        const { qrcodeId, ...params } = args;
+        result = await client.qrcodes.update(
+          qrcodeId as string,
+          asParams<Codeqr.QrcodeUpdateParams>(params),
+        );
         break;
       }
       case 'delete_qrcode':
         result = await client.qrcodes.delete(args.qrcodeId as string);
         break;
       case 'get_analytics':
-        result = await client.analytics.retrieve(args as any);
+        result = await client.analytics.retrieve(asParams<Codeqr.AnalyticsRetrieveParams>(args));
         break;
+      // Both of these used to be called with no arguments at all, so `page`
+      // and `pageSize` never reached the API and a workspace with more items
+      // than one page reported a truncated list as if it were complete.
       case 'list_domains':
-        result = await client.domains.list();
+        result = await client.domains.list(asParams<Codeqr.DomainListParams>(args));
         break;
       case 'list_tags':
-        result = await client.tags.list();
+        result = await client.tags.list(asParams<Codeqr.TagListParams>(args));
         break;
       case 'create_tag':
-        result = await client.tags.create(args as any);
+        result = await client.tags.create(asParams<Codeqr.TagCreateParams>(args));
         break;
-      case 'track_lead':
-        result = await client.track.trackLead(args as any);
-        break;
-      case 'track_sale':
-        result = await client.track.trackSale(args as any);
+      case 'get_workspace':
+        result = await getWorkspace(apiKey);
         break;
       default:
         return {
@@ -385,15 +452,20 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
     return;
   }
 
-  // Create a new MCP server instance per request
+  // Create a new MCP server instance per request.
+  //
+  // The version is this server's, from package.json. It used to carry the
+  // `@codeqr/ts` version instead, which clients read as the server's own and
+  // report in diagnostics.
   const server = new McpServer(
-    { name: 'codeqr', version: '0.19.3' },
+    { name: 'codeqr', version: SERVER_VERSION },
     {
       instructions: [
         'You are connected to CodeQR via MCP.',
         'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
         'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
-        'You can create and update short links and QR codes, read scan and click analytics, manage domains and tags, and track conversions.',
+        'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
+        'Conversion tracking is not available through this connection.',
       ].join(' '),
       capabilities: { tools: {} },
     },
@@ -411,7 +483,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 
   innerServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    return handleToolCall(client, name, args as Record<string, unknown>);
+    return handleToolCall(client, apiKey, name, args as Record<string, unknown>);
   });
 
   // Handle the request via StreamableHTTP transport

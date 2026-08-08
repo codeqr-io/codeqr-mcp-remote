@@ -19,7 +19,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { config } from './config.js';
+import { config, SERVER_VERSION } from './config.js';
 import { createWellKnownRouter } from './routes/well-known.js';
 import { createOAuthRouter } from './routes/oauth.js';
 import { handleMcpRequest } from './routes/mcp.js';
@@ -36,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 // ── Health check ─────────────────────────────────────────────────────────────
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'codeqr-mcp-remote', version: '0.1.0' });
+  res.json({ status: 'ok', service: 'codeqr-mcp-remote', version: SERVER_VERSION });
 });
 
 // ── Well-Known endpoints (no auth) ──────────────────────────────────────────

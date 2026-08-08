@@ -15,6 +15,18 @@
 
 import type { Request } from 'express';
 
+/**
+ * This server's version, reported on /health and in the MCP handshake.
+ *
+ * Declared here rather than imported from package.json so the compiled output
+ * layout stays flat, and declared once because it was previously written out
+ * in both places — and the MCP handshake had drifted to reporting the
+ * `@codeqr/ts` version instead of this one.
+ *
+ * Keep in step with the `version` field in package.json.
+ */
+export const SERVER_VERSION = '0.1.0';
+
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   serverUrl: process.env.SERVER_URL || '',
@@ -33,11 +45,13 @@ export const config = {
  * here. Adding a tool that touches a new resource means adding its scope here,
  * and existing authorizations will need to be granted again to pick it up.
  *
- * `conversions.write` is deliberately absent even though track_lead and
- * track_sale use it. CodeQR restricts that scope to workspace owners, and its
- * authorize endpoint rejects the *entire* request when any requested scope
- * exceeds the user's role — so asking for it would stop every member from
- * connecting at all, trading thirteen working tools for two.
+ * `conversions.write` is deliberately absent, and its absence is why the
+ * track_lead and track_sale tools no longer exist. CodeQR restricts that scope
+ * to workspace owners, and its authorize endpoint rejects the *entire* request
+ * when any requested scope exceeds the user's role — so asking for it would
+ * stop every member from connecting at all, trading every working tool for two.
+ * Bringing conversions back means a separate, optional consent step, not an
+ * extra entry in this list.
  */
 export const CODEQR_OAUTH_SCOPES = [
   'links.read',

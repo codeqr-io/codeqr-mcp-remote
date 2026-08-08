@@ -122,7 +122,7 @@ response = client.responses.create(
 | `get_link_info` | Get link details |
 | `update_link` | Update a link |
 | `delete_link` | Delete a link |
-| `create_qrcode` | Generate a QR code |
+| `create_qrcode` | Create a dynamic QR code encoding a URL, Wi-Fi credentials, a contact card, WhatsApp, email, SMS, a phone number, text or a crypto request |
 | `list_qrcodes` | List all QR codes |
 | `get_analytics` | Query click analytics |
 | `list_domains` | List custom domains |

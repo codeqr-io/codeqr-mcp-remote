@@ -1,0 +1,192 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "CodeQR",
+    "subtitle": "Editable, trackable QR codes",
+    "description": "CodeQR creates short links and QR codes that stay editable after they are printed or shared. Each code encodes a short link instead of the destination itself, so you can change where it leads without reprinting anything, and every scan and click is recorded with time, country, and device. It fits work where a code has to outlive the moment it was made: one code per property listing, per customer, per certificate, per job posting, or a printed campaign whose landing page moves. Your agent can create short links and QR codes on your own domain or a shared one, change where an existing code points, list codes it made earlier, and pull scan, click, lead, and sale analytics for one code or for the whole workspace.",
+    "category": "PRODUCTIVITY"
+  },
+  "tools": {
+    "create_link": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a new short link record in the workspace.",
+        "open_world_justification": "The new link resolves publicly on the internet as soon as it is created.",
+        "destructive_justification": "Only adds a link; nothing existing is overwritten or removed."
+      }
+    },
+    "list_links": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Lists existing short links and changes nothing.",
+        "open_world_justification": "Reads workspace data only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "get_link_info": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Retrieves details of one short link and changes nothing.",
+        "open_world_justification": "Reads workspace data only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "update_link": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Modifies an existing short link record.",
+        "open_world_justification": "Changes where a publicly resolving link sends visitors.",
+        "destructive_justification": "Overwrites the destination of a link already in circulation, and changing the key breaks every copy already shared."
+      }
+    },
+    "delete_link": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Removes an existing short link record.",
+        "open_world_justification": "A publicly resolving link stops resolving for everyone.",
+        "destructive_justification": "Deletion is permanent and anything already shared stops working."
+      }
+    },
+    "create_qrcode": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a new QR code record in the workspace.",
+        "open_world_justification": "The QR code encodes a short link that resolves publicly on the internet.",
+        "destructive_justification": "Only adds a code; nothing existing is overwritten or removed."
+      }
+    },
+    "list_qrcodes": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Lists existing QR codes with their destinations and scan counts, and changes nothing.",
+        "open_world_justification": "Reads workspace data only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "update_qrcode": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Modifies an existing QR code record.",
+        "open_world_justification": "Changes where a publicly resolving QR code sends the people who scan it.",
+        "destructive_justification": "Overwrites the destination of a code that may already be printed on physical material, and printed copies cannot be reverted by editing the record."
+      }
+    },
+    "delete_qrcode": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": true, "destructiveHint": true },
+      "justifications": {
+        "read_only_justification": "Removes an existing QR code record.",
+        "open_world_justification": "A publicly resolving code stops resolving for everyone who scans it.",
+        "destructive_justification": "Deletion is permanent and any printed copy stops working with no way to restore it by reprinting."
+      }
+    },
+    "get_analytics": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads recorded scan and click data and changes nothing.",
+        "open_world_justification": "Reads workspace analytics only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "list_domains": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Lists custom domains configured in the workspace and changes nothing.",
+        "open_world_justification": "Reads workspace configuration only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "list_tags": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Lists tags in the workspace and changes nothing.",
+        "open_world_justification": "Reads workspace data only and publishes nothing.",
+        "destructive_justification": "Performs no write of any kind."
+      }
+    },
+    "create_tag": {
+      "annotations": { "readOnlyHint": false, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Creates a tag record used to organize links inside the workspace.",
+        "open_world_justification": "A tag is private workspace organisation and is never visible outside the account.",
+        "destructive_justification": "Only adds a tag; nothing existing is overwritten or removed."
+      }
+    },
+    "get_workspace": {
+      "annotations": { "readOnlyHint": true, "openWorldHint": false, "destructiveHint": false },
+      "justifications": {
+        "read_only_justification": "Reads the name, slug and plan of the workspace this connection is authorized for. It takes no arguments and writes nothing.",
+        "open_world_justification": "It reports on the authenticated workspace only. Nothing is published, and no link or QR code changes behaviour as a result.",
+        "destructive_justification": "No write path exists in this tool, so no data can be lost."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Create a dynamic QR code for a destination the user names.",
+      "user_prompt": "Create a QR code that points to https://example.com/menu",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_qrcode",
+      "expected_output": "Returns the new QR code with its id, the short link it encodes, and the destination it currently leads to.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Change where an already printed QR code leads, without reprinting it.",
+      "user_prompt": "Change my menu QR code to point to https://example.com/menu-v2 instead",
+      "file_attachment_urls": null,
+      "tools_triggered": "update_qrcode",
+      "expected_output": "Confirms the destination changed while the code itself stayed the same, so copies already printed now lead to the new address.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Report how many times a specific QR code was scanned.",
+      "user_prompt": "How many scans did my menu QR code get in the last 30 days?",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_analytics",
+      "expected_output": "Returns the scan count for that code over the requested period.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Break down link activity by location.",
+      "user_prompt": "Which cities are my short links getting the most clicks from?",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_analytics",
+      "expected_output": "Returns cities ranked by click count for the workspace.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Review the QR codes that already exist in the workspace.",
+      "user_prompt": "List the QR codes in my workspace and how many scans each one has",
+      "file_attachment_urls": null,
+      "tools_triggered": "list_qrcodes",
+      "expected_output": "Returns the existing codes with their destinations and scan counts.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for barcode formats the app does not create.",
+      "user_prompt": "Generate an EAN-13 barcode for this product SKU",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because it creates short links and QR codes, not retail barcode symbologies.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for reading or decoding an existing code.",
+      "user_prompt": "Read this QR code image and tell me what URL it contains",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because it creates and manages codes but does not scan or decode images.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger when the user asks for a different provider.",
+      "user_prompt": "Shorten this URL for me using Bitly",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because the user asked for a specific third-party service it does not operate.",
+      "expected_output_url": null
+    }
+  ]
+}

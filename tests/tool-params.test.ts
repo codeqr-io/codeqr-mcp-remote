@@ -8,9 +8,13 @@
  * compiler had no opinion either. A field that does not exist upstream is
  * invisible until a real call returns 400.
  *
- * `Extends` fails to compile when a tool declares a property the SDK's
+ * `Accepted` fails to compile when a tool declares a property the SDK's
  * parameter type does not have, so the mistake becomes a build error at the
  * moment the schema is edited — or the moment an SDK upgrade removes a field.
+ *
+ * Scope: this proves property *names* only. It says nothing about whether an
+ * enum lists the right values, or whether the right properties are marked
+ * required — `tool-schemas.test.ts` covers those at runtime.
  *
  * The runtime assertion at the bottom is deliberate: it keeps the property
  * lists honest, because a list that drifted out of step with the real schema
@@ -44,6 +48,9 @@ type Assert<T extends true> = T;
 
 const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password'] as const;
 const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
+// All four are keys of LinkRetrieveInfoParams; only the type's required-ness
+// is stricter than the route, which is why the handler casts.
+const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
 const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments'] as const;
 const CREATE_QRCODE = ['url', 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
 const LIST_QRCODES = ['page'] as const;
@@ -58,6 +65,7 @@ const CREATE_TAG = ['name', 'color'] as const;
 // Each line is a build error the day a schema and the SDK disagree.
 type _CreateLink = Assert<Accepted<(typeof CREATE_LINK)[number], Codeqr.LinkCreateParams>>;
 type _ListLinks = Assert<Accepted<(typeof LIST_LINKS)[number], Codeqr.LinkListParams>>;
+type _GetLinkInfo = Assert<Accepted<(typeof GET_LINK_INFO)[number], Codeqr.LinkRetrieveInfoParams>>;
 type _UpdateLink = Assert<Accepted<(typeof UPDATE_LINK)[number], Codeqr.LinkUpdateParams>>;
 type _CreateQrcode = Assert<Accepted<(typeof CREATE_QRCODE)[number], Codeqr.QrcodeCreateParams>>;
 type _ListQrcodes = Assert<Accepted<(typeof LIST_QRCODES)[number], Codeqr.QrcodeListParams>>;
@@ -71,6 +79,7 @@ type _CreateTag = Assert<Accepted<(typeof CREATE_TAG)[number], Codeqr.TagCreateP
 type _AllChecked = [
   _CreateLink,
   _ListLinks,
+  _GetLinkInfo,
   _UpdateLink,
   _CreateQrcode,
   _ListQrcodes,
@@ -93,6 +102,7 @@ type _AllChecked = [
 const CHECKED: Record<string, { props: readonly string[]; pathParam?: string }> = {
   create_link: { props: CREATE_LINK },
   list_links: { props: LIST_LINKS },
+  get_link_info: { props: GET_LINK_INFO },
   update_link: { props: UPDATE_LINK, pathParam: 'linkId' },
   create_qrcode: { props: CREATE_QRCODE },
   list_qrcodes: { props: LIST_QRCODES },
@@ -118,10 +128,10 @@ describe('tool arguments are ones the SDK accepts', () => {
   });
 
   it('covers every tool that forwards arguments to the SDK', () => {
-    // get_link_info builds its call explicitly, so the compiler already checks
-    // it. delete_* take only an id. get_workspace takes nothing.
+    // delete_* take only an id, which is a path parameter. get_workspace
+    // takes nothing at all.
     const forwarding = TOOLS.map((t) => t.name).filter(
-      (n) => !['get_link_info', 'delete_link', 'delete_qrcode', 'get_workspace'].includes(n),
+      (n) => !['delete_link', 'delete_qrcode', 'get_workspace'].includes(n),
     );
     expect(Object.keys(CHECKED).sort()).toEqual(forwarding.sort());
   });

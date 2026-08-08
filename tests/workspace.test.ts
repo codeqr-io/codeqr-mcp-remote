@@ -1,12 +1,11 @@
 /**
- * The workspace lookup is what makes `get_link_info` possible at all: the API
- * requires a `projectSlug` that no MCP client can know, so it has to come from
- * the credential. These cover the paths where that resolution fails, because a
- * silent failure here turns into a confusing error inside an unrelated tool.
+ * Backs the `get_workspace` tool. These cover the failure paths, because the
+ * lookup crosses to a second host — a reachability problem here has to read as
+ * one, not as a vague tool error.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getWorkspace, clearWorkspaceCache, WorkspaceLookupError } from '../src/codeqr/workspace.js';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { getWorkspace, WorkspaceLookupError } from '../src/codeqr/workspace.js';
 
 const OK_BODY = JSON.stringify({
   id: 'user_1',
@@ -19,10 +18,6 @@ function respond(body: string, status = 200): Response {
 }
 
 describe('getWorkspace', () => {
-  beforeEach(() => {
-    clearWorkspaceCache();
-  });
-
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -49,20 +44,25 @@ describe('getWorkspace', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer key_1');
   });
 
-  it('reuses the resolved workspace instead of asking again', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(respond(OK_BODY));
+  it('asks CodeQR every time instead of remembering an answer', async () => {
+    // Nothing is cached on purpose. Holding the result meant a renamed
+    // workspace kept serving a stale slug, and the cache key was the raw
+    // credential — a secret retained for the life of the process.
+    // A fresh Response per call, not one reused: a body can only be read once,
+    // so a shared instance would fail on the second read for reasons that have
+    // nothing to do with what is being tested.
+    const fetchMock = vi.fn().mockImplementation(async () => respond(OK_BODY));
     vi.stubGlobal('fetch', fetchMock);
 
     await getWorkspace('key_1');
     await getWorkspace('key_1');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps one credential’s workspace out of another’s', async () => {
-    // Two people can be connected at once through the same server process. A
-    // cache keyed loosely here would hand one of them the other's workspace
-    // slug, and every lookup after that would read the wrong workspace.
+  it('reads each credential’s own workspace', async () => {
+    // Two people can be connected at once through the same process, so a
+    // lookup that leaked between them would report the wrong workspace.
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(respond(OK_BODY))
@@ -101,8 +101,7 @@ describe('getWorkspace', () => {
     await expect(getWorkspace('key_1')).rejects.toThrow(/ECONNREFUSED/);
   });
 
-  it('does not cache a failure', async () => {
-    // A transient 500 must not poison every later call for this credential.
+  it('recovers on the next call after a transient failure', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(respond('boom', 500))

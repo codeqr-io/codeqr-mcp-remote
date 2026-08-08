@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TOOLS } from '../src/routes/mcp.js';
 
 type Tool = (typeof TOOLS)[number];
@@ -34,7 +35,46 @@ function required(name: string): string[] {
 }
 
 describe('tool inventory', () => {
-  it('is exactly the set the directory submission declares', () => {
+  it('matches the tools the submission artifact declares', () => {
+    // Reads chatgpt-app-submission.json rather than restating its contents.
+    // An earlier version of this test claimed to check the submission and
+    // compared against a literal in the test file instead, so the artifact
+    // could drift — and did, still declaring two tools the server had already
+    // dropped. Announcing a tool that always fails is a documented rejection
+    // cause, so the artifact has to be checked against the server, not trusted.
+    const submission = JSON.parse(
+      readFileSync(new URL('../chatgpt-app-submission.json', import.meta.url), 'utf8'),
+    ) as { tools: Record<string, unknown> };
+
+    expect(Object.keys(submission.tools).sort()).toEqual(TOOLS.map((t) => t.name).sort());
+  });
+
+  it('carries a justification for all three annotations of every submitted tool', () => {
+    // The directory requires a justification per annotation value. A tool
+    // added to the server and copied into the artifact without them fails
+    // submission validation rather than review.
+    const submission = JSON.parse(
+      readFileSync(new URL('../chatgpt-app-submission.json', import.meta.url), 'utf8'),
+    ) as {
+      tools: Record<
+        string,
+        { annotations: Record<string, boolean>; justifications: Record<string, string> }
+      >;
+    };
+
+    for (const [name, entry] of Object.entries(submission.tools)) {
+      expect(Object.keys(entry.justifications).sort(), name).toEqual([
+        'destructive_justification',
+        'open_world_justification',
+        'read_only_justification',
+      ]);
+      // The artifact's annotations must be the server's, not a second opinion.
+      const server = TOOLS.find((t) => t.name === name);
+      expect(entry.annotations, name).toEqual(server?.annotations);
+    }
+  });
+
+  it('is the list this server actually serves', () => {
     expect(TOOLS.map((t) => t.name)).toEqual([
       'create_link',
       'list_links',
@@ -131,17 +171,25 @@ describe('schema structure', () => {
 });
 
 describe('required arguments match what the API demands', () => {
-  it('get_link_info asks for the domain and key pair, and nothing else', () => {
-    // GET /links/info requires projectSlug, domain and key together. linkId is
-    // not a substitute for the pair, and the earlier schema offering all four
-    // as optionals meant the natural call could only ever fail.
-    expect(required('get_link_info').sort()).toEqual(['domain', 'key']);
+  it('get_link_info accepts any of the identifiers the route accepts', () => {
+    // GET /links/info rejects the call only when domain, key, linkId and
+    // externalId are all missing (app/api/links/info/route.ts). Requiring the
+    // domain+key pair would drop linkId — the identifier list_links returns,
+    // and therefore the one an agent actually holds.
+    expect(Object.keys(properties('get_link_info')).sort()).toEqual([
+      'domain',
+      'externalId',
+      'key',
+      'linkId',
+    ]);
+    expect(required('get_link_info')).toEqual([]);
   });
 
   it('get_link_info does not ask the caller for projectSlug', () => {
-    // It is required by the API but unknowable to an MCP client, so it is
-    // resolved from the credential instead. Asking for it would push a value
-    // the model can only invent into a required field.
+    // The SDK's type demands it, but the route ignores it: for a restricted
+    // credential the workspace always comes from the token itself
+    // (lib/auth/index.ts). Asking would push a value the model can only
+    // invent into the request.
     expect(Object.keys(properties('get_link_info'))).not.toContain('projectSlug');
   });
 

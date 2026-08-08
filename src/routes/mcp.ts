@@ -83,24 +83,30 @@ export const TOOLS = [
       },
     },
   },
-  // `domain` and `key` are both required, and neither `linkId` nor `externalId`
-  // is a substitute: the API requires the pair. The previous schema offered all
-  // four as interchangeable optionals, so the natural call — `linkId` alone —
-  // could only ever fail. `projectSlug` is required too, and is resolved from
-  // the credential rather than asked for, because nothing an MCP client knows
-  // could supply it.
+  // Any one of these identifies a link: `linkId`, `externalId`, or `domain`
+  // and `key` together. The API rejects the call only when all four are
+  // missing, and it resolves the workspace from the credential rather than
+  // from a `projectSlug` argument.
+  //
+  // That last point is worth stating because the SDK's type disagrees: it
+  // marks `domain`, `key` and `projectSlug` as required. The type is generated
+  // from the OpenAPI document, which is stricter here than the route it
+  // describes, and the SDK forwards the query untouched. Trusting the type
+  // over the route would drop `linkId` — the identifier `list_links` actually
+  // returns, and so the one an agent has in hand.
   {
     name: 'get_link_info',
     annotations: READ_ONLY,
     description:
-      'Get detailed information about one short link, identified by its domain and slug together (for codeqr.link/github: domain "codeqr.link", key "github"). To find a link when you only know part of it, use list_links with a search term first.',
+      'Get detailed information about one short link. Identify it by linkId, or by externalId, or by domain and key together (for codeqr.link/github: domain "codeqr.link", key "github"). Pass at least one of those.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        domain: { type: 'string', description: 'The link domain, e.g. "codeqr.link"' },
-        key: { type: 'string', description: 'The link slug, e.g. "github"' },
+        linkId: { type: 'string', description: 'The link ID, as returned by list_links' },
+        externalId: { type: 'string', description: 'Your own ID for the link, if you set one' },
+        domain: { type: 'string', description: 'The link domain, e.g. "codeqr.link" (use with key)' },
+        key: { type: 'string', description: 'The link slug, e.g. "github" (use with domain)' },
       },
-      required: ['domain', 'key'],
     },
   },
   {
@@ -327,15 +333,14 @@ export const TOOLS = [
 /**
  * Narrow the untyped MCP arguments to the SDK's parameter type for a call.
  *
- * The client validates arguments against the tool's `inputSchema` before we see
- * them, so the shape is already checked at runtime; what this adds is a named
- * type at the call site instead of `any`. That matters because `any` is what
- * let `track_lead` ship for months sending `customerId`, a field the API never
- * had — the compiler had nothing to compare it against.
+ * This is a cast, not a check. `CallToolRequestSchema` validates only the tool
+ * name and that the arguments are a record — it does not enforce the tool's
+ * own `inputSchema`, so nothing here guarantees the shape at runtime.
  *
- * The compiler still cannot tell whether a schema and the SDK have drifted
- * apart. `tests/tool-schemas.test.ts` is what covers that, and it is the thing
- * to update when the SDK changes.
+ * What it buys is a named type at the call site instead of `any`, which is
+ * what `tests/tool-params.test.ts` needs in order to prove at compile time
+ * that every advertised property is one the SDK accepts. `any` is why
+ * `track_lead` could ship sending `customerId`, a field the API never had.
  */
 function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
@@ -357,18 +362,16 @@ async function handleToolCall(
       case 'list_links':
         result = await client.links.list(asParams<Codeqr.LinkListParams>(args));
         break;
-      case 'get_link_info': {
-        // `projectSlug` is required by the API and is not something any MCP
-        // client could know, so it comes from the credential rather than the
-        // caller. Without this the tool could not build a valid request at all.
-        const { slug } = await getWorkspace(apiKey);
-        result = await client.links.retrieveInfo({
-          domain: args.domain as string,
-          key: args.key as string,
-          projectSlug: slug,
-        });
+      case 'get_link_info':
+        // Cast because the SDK's parameter type is stricter than the endpoint:
+        // it demands domain + key + projectSlug, while the route accepts any
+        // one identifier and takes the workspace from the credential. The SDK
+        // passes the query through unchanged, so the looser call is the one
+        // that matches the API's real contract.
+        result = await client.links.retrieveInfo(
+          args as unknown as Codeqr.LinkRetrieveInfoParams,
+        );
         break;
-      }
       case 'update_link': {
         const { linkId, ...params } = args;
         result = await client.links.update(

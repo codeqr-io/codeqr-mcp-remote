@@ -1,16 +1,17 @@
 /**
- * Resolves which CodeQR workspace a credential belongs to.
- *
- * Several CodeQR endpoints take `projectSlug` as a required parameter even
- * though the credential already determines the workspace — `GET /links/info` is
- * the one that matters here. Nothing in an MCP request carries that slug, so
- * without this module `get_link_info` cannot construct a valid call at all.
+ * Reads which CodeQR workspace a credential is bound to.
  *
  * `GET /oauth/userinfo` is the only endpoint that answers "which workspace is
- * this?" for a bearer credential. It reads the same `restrictedToken` row that
- * authenticates every other call, which is why it works for both credential
- * kinds this server sees: OAuth access tokens minted through the broker, and
- * the personal API keys of sessions that predate it.
+ * this, and what may it do?" for a bearer credential. It looks the credential
+ * up in the same `restrictedToken` table that authenticates every other call,
+ * so it works for both kinds this server sees: OAuth access tokens minted
+ * through the broker, and the personal API keys of sessions that predate it.
+ *
+ * Nothing is cached. An earlier draft held the result for ten minutes, which
+ * bought one saved round trip on a tool nobody calls in a loop and cost three
+ * problems: a renamed workspace kept serving a stale slug, expired entries
+ * were never evicted, and the map key was the raw credential — so a secret
+ * stayed in memory long after the request that carried it was done.
  */
 
 import { config } from '../config.js';
@@ -24,23 +25,6 @@ export interface CodeQRWorkspace {
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
-/**
- * How long a resolved workspace is reused.
- *
- * A token is bound to one workspace for its whole life, so the mapping cannot
- * change underneath us — only the workspace's own name and plan can. Ten
- * minutes keeps a plan upgrade visible within a conversation while sparing the
- * round trip on every tool call that needs the slug.
- */
-const CACHE_TTL_MS = 10 * 60 * 1000;
-
-interface CacheEntry {
-  workspace: CodeQRWorkspace;
-  expiresAt: number;
-}
-
-const cache = new Map<string, CacheEntry>();
-
 export class WorkspaceLookupError extends Error {
   constructor(message: string) {
     super(message);
@@ -51,15 +35,10 @@ export class WorkspaceLookupError extends Error {
 /**
  * The workspace behind an API credential.
  *
- * Throws rather than returning null: every caller needs the slug to build a
- * request, so a missing workspace is a failed tool call, not a degraded one.
+ * Throws rather than returning null: the caller wants to report the workspace,
+ * so a missing one is a failed tool call, not a degraded answer.
  */
 export async function getWorkspace(apiKey: string): Promise<CodeQRWorkspace> {
-  const cached = cache.get(apiKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.workspace;
-  }
-
   let response: Response;
   try {
     response = await fetch(`${config.codeqrAppUrl}/api/oauth/userinfo`, {
@@ -68,12 +47,12 @@ export async function getWorkspace(apiKey: string): Promise<CodeQRWorkspace> {
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new WorkspaceLookupError(`Could not reach CodeQR to resolve the workspace: ${reason}`);
+    throw new WorkspaceLookupError(`Could not reach CodeQR to read the workspace: ${reason}`);
   }
 
   if (!response.ok) {
     throw new WorkspaceLookupError(
-      `CodeQR answered ${response.status} when resolving the workspace for this token`,
+      `CodeQR answered ${response.status} when reading the workspace for this token`,
     );
   }
 
@@ -84,7 +63,7 @@ export async function getWorkspace(apiKey: string): Promise<CodeQRWorkspace> {
   try {
     parsed = JSON.parse(body) as { project?: Partial<CodeQRWorkspace> };
   } catch {
-    throw new WorkspaceLookupError('CodeQR returned a non-JSON response when resolving the workspace');
+    throw new WorkspaceLookupError('CodeQR returned a non-JSON response when reading the workspace');
   }
 
   const project = parsed.project;
@@ -92,18 +71,10 @@ export async function getWorkspace(apiKey: string): Promise<CodeQRWorkspace> {
     throw new WorkspaceLookupError('CodeQR returned no workspace for this token');
   }
 
-  const workspace: CodeQRWorkspace = {
+  return {
     id: project.id ?? '',
     slug: project.slug,
     name: project.name ?? project.slug,
     plan: project.plan ?? 'unknown',
   };
-
-  cache.set(apiKey, { workspace, expiresAt: Date.now() + CACHE_TTL_MS });
-  return workspace;
-}
-
-/** Test seam. Production code never needs this — the TTL handles expiry. */
-export function clearWorkspaceCache(): void {
-  cache.clear();
 }

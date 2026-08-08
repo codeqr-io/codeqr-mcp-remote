@@ -128,8 +128,11 @@ response = client.responses.create(
 | `list_domains` | List custom domains |
 | `list_tags` | List tags |
 | `create_tag` | Create a tag |
-| `track_lead` | Track a lead conversion |
-| `track_sale` | Track a sale conversion |
+| `get_workspace` | Read the authorized workspace: name, slug and plan |
+
+Conversion tracking is not offered. `track_lead` and `track_sale` need the
+`conversions.write` scope, which CodeQR grants to workspace owners only, and
+requesting it makes CodeQR reject the whole authorization for everyone else.
 
 ## API Endpoints
 

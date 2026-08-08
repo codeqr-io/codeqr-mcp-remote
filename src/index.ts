@@ -10,9 +10,11 @@
  * Flow:
  *   1. Client discovers auth via GET /.well-known/oauth-protected-resource
  *   2. Client registers via POST /oauth/register (Dynamic Client Registration)
- *   3. User authorizes via GET /oauth/authorize (enters CodeQR API key)
- *   4. Client exchanges code for token via POST /oauth/token (PKCE)
- *   5. Client sends MCP requests to POST /mcp with Bearer token
+ *   3. GET /oauth/authorize sends the user to CodeQR, where they log in, choose
+ *      a project, and approve — no API key is ever handled by the user
+ *   4. CodeQR returns them to GET /oauth/callback
+ *   5. Client exchanges code for token via POST /oauth/token (PKCE)
+ *   6. Client sends MCP requests to POST /mcp with Bearer token
  */
 
 import express from 'express';
@@ -82,6 +84,7 @@ if (!process.env.VERCEL) {
 ║    Auth:      GET  /.well-known/oauth-authorization-server   ║
 ║    Register:  POST /oauth/register                           ║
 ║    Authorize: GET  /oauth/authorize                          ║
+║    Callback:  GET  /oauth/callback                           ║
 ║    Token:     POST /oauth/token                              ║
 ║    MCP:       POST /mcp                                      ║
 ║                                                              ║

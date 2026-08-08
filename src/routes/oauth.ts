@@ -1,13 +1,22 @@
 /**
  * OAuth 2.0 Authorization Code flow with PKCE.
  *
+ * This server sits between the MCP client and CodeQR, and is both:
+ *   - the authorization server the MCP client talks to (with DCR + PKCE), and
+ *   - a confidential OAuth client of CodeQR.
+ *
  * Flow:
- * 1. ChatGPT registers dynamically via POST /oauth/register
- * 2. ChatGPT redirects user to GET /oauth/authorize
- * 3. User enters their CodeQR API key and approves
- * 4. Server redirects back to ChatGPT with authorization code
- * 5. ChatGPT exchanges code for access token via POST /oauth/token
- * 6. ChatGPT uses access token in MCP requests
+ * 1. The client registers dynamically via POST /oauth/register
+ * 2. The client sends the user to GET /oauth/authorize
+ * 3. This server parks the request and redirects to CodeQR, where the user
+ *    logs in, picks which project to grant access to, and approves
+ * 4. CodeQR returns the user to GET /oauth/callback, which trades the code for
+ *    a CodeQR access + refresh token pair and redirects back to the client
+ * 5. The client exchanges its own code for a token via POST /oauth/token
+ * 6. The client sends MCP requests with that token; the CodeQR token underneath
+ *    is renewed transparently (see middleware/auth.ts)
+ *
+ * The user never sees or handles an API key.
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -15,10 +24,14 @@ import {
   createAuthorizationCode,
   consumeAuthorizationCode,
   createAccessToken,
+  createPendingAuthorization,
+  consumePendingAuthorization,
+  getRegisteredClient,
   registerClient,
 } from '../oauth/store.js';
 import { verifyCodeChallenge } from '../oauth/pkce.js';
-import { getServerUrl } from '../config.js';
+import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-oauth.js';
+import { getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
 
 export function createOAuthRouter(): Router {
   const router = Router();
@@ -53,7 +66,7 @@ export function createOAuthRouter(): Router {
 
   // ── Authorization Endpoint ─────────────────────────────────────────────────
 
-  router.get('/authorize', (req: Request, res: Response) => {
+  router.get('/authorize', async (req: Request, res: Response) => {
     const {
       client_id,
       redirect_uri,
@@ -64,23 +77,6 @@ export function createOAuthRouter(): Router {
       scope,
     } = req.query as Record<string, string>;
 
-    // Validate required parameters
-    if (response_type !== 'code') {
-      res.status(400).json({
-        error: 'unsupported_response_type',
-        error_description: 'Only "code" response_type is supported',
-      });
-      return;
-    }
-
-    if (!code_challenge || code_challenge_method !== 'S256') {
-      res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'PKCE with S256 code_challenge_method is required',
-      });
-      return;
-    }
-
     if (!client_id || !redirect_uri) {
       res.status(400).json({
         error: 'invalid_request',
@@ -89,320 +85,147 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    const serverUrl = getServerUrl(req);
+    // The redirect target is checked against what the client registered before
+    // anything is echoed to it. Skipping this would let an attacker who knows a
+    // client_id name their own redirect_uri and collect the authorization code.
+    const client = await getRegisteredClient(client_id);
 
-    // Render authorization page matching CodeQR design standards
-    const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Authorize CodeQR</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    :root {
-      --codeqr-primary: #6366f1;
-      --codeqr-primary-hover: #4f46e5;
-      --codeqr-bg: #0f0f0f;
-      --codeqr-surface: #1a1a1a;
-      --codeqr-surface-elevated: #242424;
-      --codeqr-border: #2a2a2a;
-      --codeqr-text: #ffffff;
-      --codeqr-text-secondary: #a0a0a0;
-      --codeqr-text-tertiary: #6b6b6b;
-      --codeqr-input-bg: #151515;
-      --codeqr-input-border: #2a2a2a;
-      --codeqr-input-focus: #6366f1;
-      --codeqr-success: #10b981;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      background: var(--codeqr-bg);
-      color: var(--codeqr-text);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-    .container {
-      width: 100%;
-      max-width: 480px;
-    }
-    .card {
-      background: var(--codeqr-surface);
-      border: 1px solid var(--codeqr-border);
-      border-radius: 20px;
-      padding: 48px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-    }
-    .logo-container {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 32px;
-    }
-    .logo {
-      display: block;
-      height: 40px;
-      width: auto;
-    }
-    .logo img {
-      height: 100%;
-      width: auto;
-      display: block;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 40px;
-    }
-    .title {
-      font-size: 24px;
-      font-weight: 600;
-      color: var(--codeqr-text);
-      margin-bottom: 12px;
-      letter-spacing: -0.3px;
-    }
-    .subtitle {
-      color: var(--codeqr-text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-    }
-    .form-group {
-      margin-bottom: 24px;
-    }
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--codeqr-text-secondary);
-      margin-bottom: 8px;
-      letter-spacing: 0.1px;
-    }
-    .input-wrapper {
-      position: relative;
-    }
-    input[type="text"] {
-      width: 100%;
-      padding: 14px 16px;
-      background: var(--codeqr-input-bg);
-      border: 1.5px solid var(--codeqr-input-border);
-      border-radius: 12px;
-      color: var(--codeqr-text);
-      font-size: 14px;
-      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
-      outline: none;
-      transition: all 0.2s ease;
-    }
-    input[type="text"]:hover {
-      border-color: var(--codeqr-border);
-    }
-    input[type="text"]:focus {
-      border-color: var(--codeqr-input-focus);
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    }
-    input[type="text"]::placeholder {
-      color: var(--codeqr-text-tertiary);
-    }
-    .info-box {
-      margin-top: 16px;
-      padding: 16px;
-      background: var(--codeqr-surface-elevated);
-      border: 1px solid var(--codeqr-border);
-      border-radius: 12px;
-      font-size: 13px;
-      color: var(--codeqr-text-secondary);
-      line-height: 1.6;
-    }
-    .info-box a {
-      color: var(--codeqr-primary);
-      text-decoration: none;
-      font-weight: 500;
-      transition: color 0.2s;
-    }
-    .info-box a:hover {
-      color: var(--codeqr-primary-hover);
-      text-decoration: underline;
-    }
-    .actions {
-      margin-top: 32px;
-      display: flex;
-      gap: 12px;
-    }
-    button {
-      flex: 1;
-      padding: 14px 24px;
-      border: none;
-      border-radius: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-    .btn-authorize {
-      background: var(--codeqr-primary);
-      color: white;
-      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-    }
-    .btn-authorize:hover {
-      background: var(--codeqr-primary-hover);
-      box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
-      transform: translateY(-1px);
-    }
-    .btn-authorize:active {
-      transform: translateY(0);
-    }
-    .btn-cancel {
-      background: transparent;
-      color: var(--codeqr-text-secondary);
-      border: 1.5px solid var(--codeqr-border);
-    }
-    .btn-cancel:hover {
-      background: var(--codeqr-surface-elevated);
-      border-color: var(--codeqr-border);
-      color: var(--codeqr-text);
-    }
-    .client-info {
-      margin-top: 32px;
-      padding-top: 24px;
-      border-top: 1px solid var(--codeqr-border);
-      text-align: center;
-    }
-    .client-label {
-      font-size: 12px;
-      color: var(--codeqr-text-tertiary);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      font-weight: 500;
-    }
-    .client-id {
-      font-size: 13px;
-      color: var(--codeqr-text-secondary);
-      font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Consolas', monospace;
-      word-break: break-all;
-    }
-    @media (max-width: 640px) {
-      .card {
-        padding: 32px 24px;
-        border-radius: 16px;
-      }
-      .logo {
-        height: 36px;
-      }
-      .title {
-        font-size: 22px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="card">
-      <div class="logo-container">
-        <div class="logo">
-          <img 
-            src="https://res.cloudinary.com/dhnaggn4g/image/upload/v1773973005/codeqr.io/logo/logo_dark.png" 
-            alt="CodeQR" 
-            loading="eager"
-          >
-        </div>
-      </div>
-      <div class="header">
-        <h1 class="title">Authorize Application</h1>
-        <p class="subtitle">
-          An application is requesting access to your CodeQR account via MCP.
-          Enter your API key to continue.
-        </p>
-      </div>
-
-      <form method="POST" action="${serverUrl}/oauth/authorize">
-        <input type="hidden" name="client_id" value="${escapeHtml(client_id)}">
-        <input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri)}">
-        <input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge)}">
-        <input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method)}">
-        <input type="hidden" name="state" value="${escapeHtml(state || '')}">
-        <input type="hidden" name="scope" value="${escapeHtml(scope || 'mcp:tools')}">
-
-        <div class="form-group">
-          <label for="api_key">CodeQR API Key</label>
-          <div class="input-wrapper">
-            <input 
-              type="text" 
-              id="api_key" 
-              name="api_key" 
-              placeholder="codeqr_xxxx..." 
-              required 
-              autocomplete="off"
-              spellcheck="false"
-            >
-          </div>
-          <div class="info-box">
-            Get your API key at
-            <a href="https://app.codeqr.io/settings/tokens" target="_blank" rel="noopener noreferrer">
-              app.codeqr.io/settings/tokens
-            </a>.
-            Your key is encrypted and only used to make API calls on your behalf.
-          </div>
-        </div>
-
-        <div class="actions">
-          <button type="button" class="btn-cancel" onclick="window.close()">Cancel</button>
-          <button type="submit" class="btn-authorize">Authorize</button>
-        </div>
-      </form>
-
-      <div class="client-info">
-        <div class="client-label">Requesting Application</div>
-        <div class="client-id">${escapeHtml(client_id)}</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-
-    res.type('html').send(html);
-  });
-
-  // ── Authorization POST (form submission) ───────────────────────────────────
-
-  router.post('/authorize', async (req: Request, res: Response) => {
-    const {
-      client_id,
-      redirect_uri,
-      code_challenge,
-      code_challenge_method,
-      state,
-      scope,
-      api_key,
-    } = req.body;
-
-    if (!api_key) {
+    if (!client) {
       res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'API key is required',
+        error: 'invalid_client',
+        error_description: 'Unknown client_id. Register via POST /oauth/register first.',
       });
       return;
     }
 
-    // Create authorization code bound to the user's API key
-    const code = await createAuthorizationCode({
+    if (!client.redirectUris.includes(redirect_uri)) {
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'redirect_uri does not match any URI registered for this client',
+      });
+      return;
+    }
+
+    // From here the redirect_uri is trusted, so failures are reported to the
+    // client as OAuth errors rather than as an HTTP page the user is stuck on.
+    if (response_type !== 'code') {
+      redirectWithError(res, redirect_uri, 'unsupported_response_type', 'Only "code" is supported', state);
+      return;
+    }
+
+    if (!code_challenge || code_challenge_method !== 'S256') {
+      redirectWithError(
+        res,
+        redirect_uri,
+        'invalid_request',
+        'PKCE with S256 code_challenge_method is required',
+        state,
+      );
+      return;
+    }
+
+    if (!hasCodeQROAuthCredentials()) {
+      redirectWithError(
+        res,
+        redirect_uri,
+        'server_error',
+        'This MCP server is not configured to authorize against CodeQR',
+        state,
+      );
+      return;
+    }
+
+    // Park everything the callback will need. The client's own state travels
+    // inside this record instead of over to CodeQR, so a callback carrying
+    // someone else's state cannot be replayed into this session.
+    const brokerState = await createPendingAuthorization({
       clientId: client_id,
       redirectUri: redirect_uri,
       codeChallenge: code_challenge,
       codeChallengeMethod: code_challenge_method,
-      codeqrApiKey: api_key,
+      clientState: state,
       scope: scope || 'mcp:tools',
     });
 
-    // Redirect back to the client with the authorization code
-    const redirectUrl = new URL(redirect_uri);
-    redirectUrl.searchParams.set('code', code);
-    if (state) redirectUrl.searchParams.set('state', state);
+    res.redirect(
+      302,
+      buildAuthorizeUrl({ redirectUri: getCallbackUrl(req), state: brokerState }),
+    );
+  });
+
+  // ── Callback from CodeQR ───────────────────────────────────────────────────
+
+  router.get('/callback', async (req: Request, res: Response) => {
+    const { code, state, error, error_description } = req.query as Record<string, string>;
+
+    if (!state) {
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Missing state parameter',
+      });
+      return;
+    }
+
+    const pending = await consumePendingAuthorization(state);
+
+    if (!pending) {
+      // Also the path taken when the user lets the approval screen sit for half
+      // an hour, so it is phrased as something they can act on.
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'This authorization request expired or was already used. Start again.',
+      });
+      return;
+    }
+
+    // The user pressed Refuse, or CodeQR turned the request down. Either way the
+    // client is told, per RFC 6749 §4.1.2.1, instead of being left waiting.
+    if (error) {
+      redirectWithError(
+        res,
+        pending.redirectUri,
+        error,
+        error_description || 'Authorization was refused',
+        pending.clientState,
+      );
+      return;
+    }
+
+    if (!code) {
+      redirectWithError(
+        res,
+        pending.redirectUri,
+        'invalid_request',
+        'CodeQR returned no authorization code',
+        pending.clientState,
+      );
+      return;
+    }
+
+    let codeqr;
+    try {
+      codeqr = await exchangeCodeForCredentials({
+        code,
+        redirectUri: getCallbackUrl(req),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Token exchange with CodeQR failed';
+      redirectWithError(res, pending.redirectUri, 'server_error', message, pending.clientState);
+      return;
+    }
+
+    const authCode = await createAuthorizationCode({
+      clientId: pending.clientId,
+      redirectUri: pending.redirectUri,
+      codeChallenge: pending.codeChallenge,
+      codeChallengeMethod: pending.codeChallengeMethod,
+      codeqr,
+      scope: pending.scope,
+    });
+
+    const redirectUrl = new URL(pending.redirectUri);
+    redirectUrl.searchParams.set('code', authCode);
+    if (pending.clientState) redirectUrl.searchParams.set('state', pending.clientState);
 
     res.redirect(302, redirectUrl.toString());
   });
@@ -457,10 +280,10 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    // Issue access token linked to the user's CodeQR API key
+    // Issue an access token backed by the user's CodeQR credentials
     const { token, expiresIn } = await createAccessToken({
       clientId: authCode.clientId,
-      codeqrApiKey: authCode.codeqrApiKey,
+      codeqr: authCode.codeqr,
       scope: authCode.scope,
     });
 
@@ -477,11 +300,23 @@ export function createOAuthRouter(): Router {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+/**
+ * Hand an OAuth error back to the client at its own redirect_uri.
+ *
+ * Only ever called with a redirect_uri that has already been matched against
+ * the client's registration.
+ */
+function redirectWithError(
+  res: Response,
+  redirectUri: string,
+  error: string,
+  description: string,
+  state?: string,
+): void {
+  const url = new URL(redirectUri);
+  url.searchParams.set('error', error);
+  url.searchParams.set('error_description', description);
+  if (state) url.searchParams.set('state', state);
+
+  res.redirect(302, url.toString());
 }

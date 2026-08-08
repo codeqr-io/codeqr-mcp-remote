@@ -1,0 +1,37 @@
+name: Close external PRs
+
+# Este repositório não aceita contribuições externas. Como o GitHub não permite
+# desativar pull requests em repositórios públicos, qualquer PR aberto por alguém
+# fora da organização é fechado automaticamente.
+#
+# Usa `pull_request_target` para rodar no contexto do repositório base (token com
+# permissão de escrita). O código do PR NUNCA é baixado nem executado — o job só
+# lê metadados do evento, então não há risco de execução de código não confiável.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    # Passam: owner, membros da org e colaboradores do repo, além de bots conhecidos.
+    if: >-
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      && !contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment and close
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr comment "$PR_URL" --body "Thanks for your interest. This repository does not accept external pull requests — changes are made by the CodeQR team only.
+
+          If you found a bug or have a suggestion, please open an [issue](https://github.com/${REPO}/issues) instead and we'll take a look.
+
+          _Closed automatically._"
+          gh pr close "$PR_URL"

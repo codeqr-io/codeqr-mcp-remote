@@ -15,9 +15,15 @@ Remote MCP server for [CodeQR](https://codeqr.io) with OAuth 2.0 authentication.
 
 1. Client discovers auth endpoints via `/.well-known/oauth-protected-resource`
 2. Client registers dynamically via `POST /oauth/register`
-3. User authorizes by entering their CodeQR API key
-4. Client exchanges authorization code for access token (PKCE)
-5. Client sends MCP tool calls with Bearer token to `POST /mcp`
+3. `GET /oauth/authorize` sends the user to CodeQR, where they log in, choose
+   which project to grant access to, and approve — no API key is ever handled
+4. CodeQR returns them to `GET /oauth/callback`, which trades the code for an
+   access + refresh token pair
+5. Client exchanges authorization code for access token (PKCE)
+6. Client sends MCP tool calls with Bearer token to `POST /mcp`
+
+The CodeQR access token lasts 7 days and is renewed transparently, so the
+session stays valid for the 120-day life of the refresh token.
 
 ## Quick Start
 
@@ -54,6 +60,9 @@ vercel
 # - SERVER_URL — Your public server URL (e.g., https://mcp.codeqr.io)
 # - UPSTASH_REDIS_REST_URL — From your Upstash Redis database (REST API)
 # - UPSTASH_REDIS_REST_TOKEN — From your Upstash Redis database
+# - CODEQR_OAUTH_CLIENT_ID — client_id of the OAuth app registered in CodeQR
+# - CODEQR_OAUTH_CLIENT_SECRET — its client_secret
+# - CODEQR_APP_URL — Dashboard origin (default: https://app.codeqr.io)
 # - STAINLESS_API_KEY — Optional Stainless API key
 # - LOG_LEVEL — Log level (default: info)
 ```
@@ -130,8 +139,8 @@ response = client.responses.create(
 | GET | `/.well-known/oauth-protected-resource` | No | OAuth resource metadata (RFC 9728) |
 | GET | `/.well-known/oauth-authorization-server` | No | OAuth server metadata (RFC 8414) |
 | POST | `/oauth/register` | No | Dynamic client registration (RFC 7591) |
-| GET | `/oauth/authorize` | No | Authorization page |
-| POST | `/oauth/authorize` | No | Authorization form submission |
+| GET | `/oauth/authorize` | No | Redirects the user to CodeQR to approve |
+| GET | `/oauth/callback` | No | Return leg from CodeQR |
 | POST | `/oauth/token` | No | Token exchange |
 | POST | `/mcp` | Bearer | MCP Streamable HTTP endpoint |
 

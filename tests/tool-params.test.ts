@@ -12,9 +12,17 @@
  * parameter type does not have, so the mistake becomes a build error at the
  * moment the schema is edited — or the moment an SDK upgrade removes a field.
  *
- * Scope: this proves property *names* only. It says nothing about whether an
- * enum lists the right values, or whether the right properties are marked
- * required — `tool-schemas.test.ts` covers those at runtime.
+ * Two things are checked here, both at compile time: property *names*, and the
+ * enum values a tool advertises.
+ *
+ * Still not covered, so upgrades need eyes as well: whether an optional
+ * parameter became required (`asParams` is a cast, so the compiler cannot
+ * see it), and any change in runtime behaviour behind an unchanged signature.
+ *
+ * `@codeqr/ts` is pinned to an exact version in package.json so that upgrading
+ * is a commit somebody makes on purpose. A caret range would not help: in 0.x
+ * semver it never crosses a minor anyway, which is how the dependency sat five
+ * releases behind without anyone noticing.
  *
  * The runtime assertion at the bottom is deliberate: it keeps the property
  * lists honest, because a list that drifted out of step with the real schema
@@ -45,6 +53,18 @@ type Accepted<Props extends string, Params> = Props extends Extract<keyof Params
  * the result was constrained here.
  */
 type Assert<T extends true> = T;
+
+/** Both directions: the tool offers exactly what the SDK accepts, no more, no less. */
+type Same<Tool, Sdk> = [Tool] extends [Sdk]
+  ? [Sdk] extends [Tool]
+    ? true
+    : ['the SDK accepts values this tool does not offer:', Exclude<Sdk, Tool>]
+  : ['this tool offers values the SDK rejects:', Exclude<Tool, Sdk>];
+
+/** One direction, for enums the tool narrows on purpose. */
+type SubsetOf<Tool, Sdk> = Tool extends Sdk
+  ? true
+  : ['this tool offers values the SDK rejects:', Exclude<Tool, Sdk>];
 
 const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password'] as const;
 const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
@@ -99,6 +119,52 @@ type _AllChecked = [
  * takes `linkId` and `qrcodeId` as ordinary filters. Removing them everywhere
  * made this test pass while silently covering two fewer properties.
  */
+// ── Enum values ──────────────────────────────────────────────────────────────
+//
+// Mirrored exactly: the tool is meant to offer everything the API takes, so a
+// value appearing or disappearing upstream is a change we have to react to.
+const ANALYTICS_INTERVAL = ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all', 'all_unfiltered'] as const;
+const TAG_COLOR = ['red', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown'] as const;
+
+type _Interval = Assert<
+  Same<(typeof ANALYTICS_INTERVAL)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['interval']>>
+>;
+type _Color = Assert<Same<(typeof TAG_COLOR)[number], NonNullable<Codeqr.TagCreateParams['color']>>>;
+
+// Narrowed on purpose, so only one direction is checked — but that direction
+// matters: it catches the SDK dropping a value we still advertise.
+//
+//   qrcode type — every other type needs payload fields this server does not expose yet
+//   analytics event — 'views' belongs to Pages, which this server does not reach
+//   analytics groupBy — 'clicks', 'scans' and 'views' are accepted upstream and answer 500
+const QRCODE_TYPE = ['url'] as const;
+const ANALYTICS_EVENT = ['clicks', 'scans', 'leads', 'sales', 'composite'] as const;
+const ANALYTICS_GROUP_BY = [
+  'count', 'timeseries', 'countries', 'cities', 'devices', 'browsers', 'os', 'referers',
+  'top_links', 'top_qrcodes', 'top_urls',
+] as const;
+
+type _QrcodeType = Assert<
+  SubsetOf<(typeof QRCODE_TYPE)[number], NonNullable<Codeqr.QrcodeCreateParams['type']>>
+>;
+type _Event = Assert<
+  SubsetOf<(typeof ANALYTICS_EVENT)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['event']>>
+>;
+type _GroupBy = Assert<
+  SubsetOf<(typeof ANALYTICS_GROUP_BY)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['groupBy']>>
+>;
+
+type _AllEnumsChecked = [_Interval, _Color, _QrcodeType, _Event, _GroupBy];
+
+/** Ties each literal above to the enum the tool actually declares. */
+const CHECKED_ENUMS: Array<{ tool: string; prop: string; values: readonly string[] }> = [
+  { tool: 'get_analytics', prop: 'interval', values: ANALYTICS_INTERVAL },
+  { tool: 'get_analytics', prop: 'event', values: ANALYTICS_EVENT },
+  { tool: 'get_analytics', prop: 'groupBy', values: ANALYTICS_GROUP_BY },
+  { tool: 'create_tag', prop: 'color', values: TAG_COLOR },
+  { tool: 'create_qrcode', prop: 'type', values: QRCODE_TYPE },
+];
+
 const CHECKED: Record<string, { props: readonly string[]; pathParam?: string }> = {
   create_link: { props: CREATE_LINK },
   list_links: { props: LIST_LINKS },
@@ -124,6 +190,19 @@ describe('tool arguments are ones the SDK accepts', () => {
       );
       const body = declared.filter((k) => k !== pathParam);
       expect([...body].sort(), name).toEqual([...props].sort());
+    }
+  });
+
+  it('checks the same enum values the tools actually declare', () => {
+    // Same reason as above: a literal that drifted from the schema would keep
+    // the type assertions compiling while covering the wrong thing.
+    for (const { tool, prop, values } of CHECKED_ENUMS) {
+      const declared = (
+        TOOLS.find((t) => t.name === tool)?.inputSchema.properties as
+          | Record<string, { enum?: readonly string[] }>
+          | undefined
+      )?.[prop]?.enum;
+      expect(declared, `${tool}.${prop}`).toEqual([...values]);
     }
   });
 

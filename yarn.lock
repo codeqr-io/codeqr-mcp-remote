@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@codeqr/ts@^0.19.3":
-  version "0.19.3"
-  resolved "https://registry.yarnpkg.com/@codeqr/ts/-/ts-0.19.3.tgz#5d11e1d0197ba89ae09ff3b7df77755879e9b380"
-  integrity sha512-Ux8VO31psm+Ux1yoWjP0SCzlxLfndocEKR3akf6hMHz4emNBLf48FYnVr6O/VC6Ya+oWgL6ghPdiToqobHUDvA==
+"@codeqr/ts@0.24.1":
+  version "0.24.1"
+  resolved "https://registry.yarnpkg.com/@codeqr/ts/-/ts-0.24.1.tgz#42d228e21e5c0d0cffad63fbf889fddd1b300f77"
+  integrity sha512-rA93ohezCY37YMu4B5DliJ4XaCeOCPSCIOwhKmDSwizK5QIRL2wz6x/gAfwQP7vzJeITwWLqFKMyTHgXrTVfrg==
 
 "@esbuild/aix-ppc64@0.21.5":
   version "0.21.5"

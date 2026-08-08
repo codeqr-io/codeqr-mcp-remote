@@ -4,7 +4,7 @@
  * This server is a confidential client of CodeQR: it holds a client secret and
  * never exposes it to the MCP client. The token CodeQR issues here is stored in
  * the same table as a personal API key, so everything downstream — the SDK, the
- * 15 tools — treats it identically and needs no knowledge of OAuth.
+ * every tool — treats it identically and needs no knowledge of OAuth.
  */
 
 import { CODEQR_OAUTH_SCOPES, config, hasCodeQROAuthCredentials } from '../config.js';

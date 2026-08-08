@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 *.log
+
+# Chaves de assinatura do MCP Registry (DNS auth) — nunca versionar
+*.pem

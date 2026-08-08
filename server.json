@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.codeqr/codeqr",
+  "title": "CodeQR",
+  "description": "Create and manage CodeQR short links, QR codes, and analytics from any MCP client.",
+  "version": "0.1.0",
+  "websiteUrl": "https://codeqr.io",
+  "repository": {
+    "url": "https://github.com/codeqr-io/codeqr-mcp-remote",
+    "source": "github",
+    "id": "1186769130"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.codeqr.io/mcp"
+    }
+  ]
+}

@@ -124,12 +124,8 @@ type _AllChecked = [
 //
 // Mirrored exactly: the tool is meant to offer everything the API takes, so a
 // value appearing or disappearing upstream is a change we have to react to.
-const ANALYTICS_INTERVAL = ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all', 'all_unfiltered'] as const;
 const TAG_COLOR = ['red', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown'] as const;
 
-type _Interval = Assert<
-  Same<(typeof ANALYTICS_INTERVAL)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['interval']>>
->;
 type _Color = Assert<Same<(typeof TAG_COLOR)[number], NonNullable<Codeqr.TagCreateParams['color']>>>;
 
 // Narrowed on purpose, so only one direction is checked — but that direction
@@ -142,7 +138,13 @@ type _Color = Assert<Same<(typeof TAG_COLOR)[number], NonNullable<Codeqr.TagCrea
 //                 coordinates, and facetime has no constructor branch at all
 //   analytics event — 'views' belongs to Pages, which this server does not reach
 //   analytics groupBy — 'clicks', 'scans' and 'views' are accepted upstream and answer 500
+//   analytics interval — 'all_unfiltered' answers 500 for every groupBy offered
+//                        here: INTERVAL_DATA has no entry for it, so resolving
+//                        the window dereferences undefined. Only the 'clicks'
+//                        and 'scans' groupBy branches short-circuit before
+//                        that, and neither is offered
 const QRCODE_TYPE = ['url', 'text', 'email', 'phone', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
+const ANALYTICS_INTERVAL = ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all'] as const;
 const ANALYTICS_EVENT = ['clicks', 'scans', 'leads', 'sales', 'composite'] as const;
 const ANALYTICS_GROUP_BY = [
   'count', 'timeseries', 'countries', 'cities', 'devices', 'browsers', 'os', 'referers',
@@ -151,6 +153,9 @@ const ANALYTICS_GROUP_BY = [
 
 type _QrcodeType = Assert<
   SubsetOf<(typeof QRCODE_TYPE)[number], NonNullable<Codeqr.QrcodeCreateParams['type']>>
+>;
+type _Interval = Assert<
+  SubsetOf<(typeof ANALYTICS_INTERVAL)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['interval']>>
 >;
 type _Event = Assert<
   SubsetOf<(typeof ANALYTICS_EVENT)[number], NonNullable<Codeqr.AnalyticsRetrieveParams['event']>>

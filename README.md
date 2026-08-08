@@ -188,6 +188,11 @@ error that does not name the cause.
 # 1. Bump the version in package.json, src/config.ts and server.json together.
 #    `yarn test` fails if they drift — the registry refuses to republish a
 #    version it already has.
+#
+#    Then bump it in the CodeQR app too: the Server Card at
+#    app/.well-known/mcp/server-card.json/route.ts advertises this server's
+#    version, and no test can reach across repos to check. It already drifted
+#    once, to a release that never existed.
 
 # 2. Authenticate with the private key (kept outside this repo).
 PRIVATE_KEY="$(openssl pkey -in /path/to/codeqr-io.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n')"

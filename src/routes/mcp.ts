@@ -56,10 +56,15 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * fill. Get a key wrong and the record saves, the code renders, and it encodes
  * an empty or malformed value. There is no error to notice.
  *
- * The field names below are therefore not guesses: each one is what
- * `qrCodeConstructor` actually reads when it builds the encoded string. Three
- * of them are named in ways nobody would guess, and are called out where they
- * appear — `email.cco`, `sms.subject` and `crypto.email`.
+ * The field names below are therefore not guesses: each one is what the display
+ * page a dynamic scan lands on actually reads. That page, not
+ * `qrCodeConstructor`, is the reference — the constructor encodes content into
+ * the printed pattern, which is the static path, and this tool only creates
+ * dynamic codes. The two agree everywhere except `crypto`, where the constructor
+ * reads `email` and the page reads `address`.
+ *
+ * Three names would not be guessed by anyone, and are called out where they
+ * appear — `email.cco`, `sms.subject` and `crypto.address`.
  *
  * Three of CodeQR's types are deliberately absent, and this is the reason:
  *
@@ -390,9 +395,17 @@ export const TOOLS = [
         // this set, and the old description named only four of the nine, so a
         // reasonable guess like "6m" or "last month" failed at the API instead
         // of at the schema.
+        //
+        // 'all_unfiltered' is accepted upstream and answers 500 for every
+        // groupBy this tool offers. It passes the API's own Zod enum, but the
+        // interval-to-window map has no entry for it, so resolving the start
+        // date reads a property off undefined. The two branches that would
+        // return before that point are keyed on groupBy 'clicks' and 'scans' —
+        // the two values this tool deliberately withholds, because they answer
+        // 500 as well. 'all' covers the same intent and works.
         interval: {
           type: 'string',
-          enum: ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all', 'all_unfiltered'],
+          enum: ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all'],
           description: 'Time window to report over (optional, defaults to 24h)',
         },
       },

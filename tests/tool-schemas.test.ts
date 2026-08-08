@@ -245,7 +245,6 @@ describe('enums match the values the API accepts', () => {
       'ytd',
       '1y',
       'all',
-      'all_unfiltered',
     ]);
   });
 
@@ -332,6 +331,20 @@ describe('enums match the values the API accepts', () => {
     // currently answer 500, so offering them would only route the agent into
     // a failure.
     expect(properties('get_analytics').groupBy?.enum).not.toContain('views');
+  });
+
+  it('does not offer the one interval that cannot answer', () => {
+    // 'all_unfiltered' passes the API's own Zod enum, so it looks valid from
+    // the outside and the SDK type accepts it. It then answers 500 for every
+    // groupBy offered here: the interval-to-window map has no entry for it, so
+    // resolving the start date reads a property off undefined. The only two
+    // branches that return before that point are keyed on groupBy 'clicks' and
+    // 'scans', which are themselves withheld for answering 500.
+    //
+    // Mirroring the SDK exactly is the rule for enums, and this is the
+    // documented exception. 'all' covers the same intent and works.
+    expect(properties('get_analytics').interval?.enum).not.toContain('all_unfiltered');
+    expect(properties('get_analytics').interval?.enum).toContain('all');
   });
 });
 

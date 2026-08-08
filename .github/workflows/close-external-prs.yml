@@ -31,16 +31,46 @@ jobs:
     # partir de um fork. Logo, branch deste repositório implica acesso de
     # escrita, e isso vale independentemente de a associação ser pública ou não.
     #
-    # Consequência aceita: um membro do time que abrir PR a partir de um fork
-    # pessoal também é fechado. A saída é empurrar o branch para este
-    # repositório, que é o fluxo normal do time.
+    # Duas consequências, ambas desejadas:
+    #   - um membro do time que abrir PR a partir de um fork pessoal também é
+    #     fechado; a saída é empurrar o branch para este repositório, que é o
+    #     fluxo normal do time;
+    #   - um colaborador com acesso `read` ou `triage` passava antes (contava
+    #     como COLLABORATOR) e agora é fechado, que é o comportamento correto:
+    #     ele não tem escrita aqui.
     #
-    # Isso também dispensa a allowlist de bots que existia aqui: Dependabot e
-    # Renovate criam branches neste repositório, não em forks, então já passam.
+    # Se `head.repo` for nulo — fork apagado entre a abertura e o evento — a
+    # comparação é verdadeira e o PR é fechado. Falhar fechando é o lado seguro.
+    #
+    # Sem allowlist de bots: Dependabot e Renovate criam branches neste
+    # repositório, não em forks, então passam por esta mesma regra. (Não é o
+    # argumento usado para `author_association` — a allowlist testava
+    # `user.login`, que nada tem a ver com visibilidade de associação. Hoje o
+    # repositório não tem nenhum dos dois configurado. Se um dia adotarem
+    # Renovate em fork mode, ele passa a cair aqui e precisa voltar.)
     if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
-      - name: Comment and close
+      # Fechar vem primeiro, e sozinho. Antes, o comentário rodava antes do
+      # fechamento no mesmo passo `bash -e`: um rate limit secundário ou uma
+      # conversa trancada abortava o passo e deixava o PR externo ABERTO —
+      # o efeito de política ficava encadeado atrás do de cortesia.
+      - name: Close the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr close "$PR_URL"
+
+      # Só na abertura. O autor de um PR externo pode reabri-lo à vontade, e
+      # comentar em cada ciclo transforma o workflow em ferramenta de flood no
+      # próprio repositório. Reabrir continua fechando; só não repete o texto.
+      #
+      # `continue-on-error` porque isto é cortesia: a política já foi aplicada
+      # no passo acima, e uma falha ao comentar não deve marcar a execução como
+      # se o PR tivesse escapado.
+      - name: Explain why
+        if: github.event.action == 'opened'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -51,4 +81,3 @@ jobs:
           If you found a bug or have a suggestion, please open an [issue](https://github.com/${REPO}/issues) instead and we'll take a look.
 
           _Closed automatically._"
-          gh pr close "$PR_URL"

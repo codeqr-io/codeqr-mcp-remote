@@ -29,10 +29,15 @@ export const config = {
 /**
  * Scopes requested from CodeQR on the user's behalf.
  *
- * One entry per capability the 15 MCP tools actually exercise — nothing wider.
  * `user.read` is appended by CodeQR's own authorize schema, so it is not listed
  * here. Adding a tool that touches a new resource means adding its scope here,
  * and existing authorizations will need to be granted again to pick it up.
+ *
+ * `conversions.write` is deliberately absent even though track_lead and
+ * track_sale use it. CodeQR restricts that scope to workspace owners, and its
+ * authorize endpoint rejects the *entire* request when any requested scope
+ * exceeds the user's role — so asking for it would stop every member from
+ * connecting at all, trading thirteen working tools for two.
  */
 export const CODEQR_OAUTH_SCOPES = [
   'links.read',
@@ -43,7 +48,6 @@ export const CODEQR_OAUTH_SCOPES = [
   'domains.read',
   'tags.read',
   'tags.write',
-  'conversions.write',
 ] as const;
 
 /**

@@ -26,8 +26,14 @@ import {
 } from './store.js';
 import { needsRefresh, refreshCredentials } from './codeqr-oauth.js';
 
-/** Give up waiting on another refresher after this long. */
-const WAIT_TIMEOUT_MS = 12_000;
+/**
+ * Give up waiting on another refresher after this long.
+ *
+ * Longer than the lock's own TTL (30s) on purpose: if the holder dies without
+ * releasing, the waiter has to still be around when the lock expires, or every
+ * caller gives up and the session looks broken until traffic stops.
+ */
+const WAIT_TIMEOUT_MS = 35_000;
 const POLL_INTERVAL_MS = 250;
 
 // Collapses concurrent refreshes of the same session within this instance.
@@ -89,10 +95,23 @@ async function renewSerialized(entry: AccessToken): Promise<CodeQRCredentials> {
         }
 
         const renewed = await refreshCredentials(credentials.refreshToken);
-        await updateAccessTokenCredentials(entry.token, renewed);
+
+        // The old refresh token is spent the moment the call above returns. If
+        // persisting the new pair fails we must not discard it — the next
+        // renewal would present the spent one and CodeQR would revoke the whole
+        // family. Retry once, and hand the credentials back regardless so at
+        // least this request succeeds.
+        try {
+          await updateAccessTokenCredentials(entry.token, renewed);
+        } catch {
+          await updateAccessTokenCredentials(entry.token, renewed).catch(() => {});
+        }
+
         return renewed;
       } finally {
-        await releaseRefreshLock(entry.token);
+        // Releasing is best-effort: the lock expires on its own, and letting a
+        // failure here propagate would turn a completed rotation into an error.
+        await releaseRefreshLock(entry.token).catch(() => {});
       }
     }
 

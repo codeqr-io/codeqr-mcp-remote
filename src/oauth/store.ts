@@ -112,9 +112,11 @@ const AUTH_CODE_TTL_SEC = 10 * 60;
 // visitor, creating a project.
 const PENDING_TTL_SEC = 30 * 60;
 
-// Long enough to cover a slow token call, short enough that a crashed refresh
-// does not strand the session for more than a few seconds.
-const REFRESH_LOCK_TTL_SEC = 15;
+// Must exceed TOKEN_REQUEST_TIMEOUT_MS (20s in oauth/codeqr-oauth.ts), which is
+// the longest a holder can possibly take. If the lock could expire while a
+// refresh is still in flight, a second caller would re-present a refresh token
+// that is about to be spent — the exact case the lock exists to prevent.
+const REFRESH_LOCK_TTL_SEC = 30;
 
 // ── In-memory fallback ─────────────────────────────────────────────────────────
 

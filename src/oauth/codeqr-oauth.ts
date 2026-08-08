@@ -29,6 +29,12 @@ export class CodeQROAuthError extends Error {
  */
 const REFRESH_MARGIN_MS = 10 * 60 * 1000;
 
+/**
+ * Hard ceiling on a token call. Must stay below the refresh lock's TTL so the
+ * lock cannot outlive its holder — see oauth/store.ts.
+ */
+export const TOKEN_REQUEST_TIMEOUT_MS = 20_000;
+
 export function needsRefresh(credentials: CodeQRCredentials, now = Date.now()): boolean {
   return credentials.expiresAt - REFRESH_MARGIN_MS <= now;
 }
@@ -57,15 +63,31 @@ async function requestToken(body: Record<string, string>): Promise<CodeQRCredent
     );
   }
 
-  const response = await fetch(`${config.codeqrAppUrl}/api/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      ...body,
-      client_id: config.codeqrOAuthClientId,
-      client_secret: config.codeqrOAuthClientSecret,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${config.codeqrAppUrl}/api/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        ...body,
+        client_id: config.codeqrOAuthClientId,
+        client_secret: config.codeqrOAuthClientSecret,
+      }),
+      // Bounded so a hung request cannot outlive the refresh lock held around
+      // it. If it could, the lock would expire mid-flight and a second caller
+      // would re-present a refresh token that is about to be spent.
+      signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Never surfaced as invalid_grant: the authorization is intact, the call
+    // simply did not complete, and the caller must be free to retry.
+    throw new CodeQROAuthError(
+      'server_error',
+      err instanceof Error && err.name === 'TimeoutError'
+        ? 'CodeQR did not answer the token request in time'
+        : `Could not reach CodeQR to exchange tokens: ${err instanceof Error ? err.message : 'unknown error'}`,
+    );
+  }
 
   // Read as text first: an upstream failure can answer with an HTML error page,
   // and calling .json() on that throws something unrelated to the real cause.

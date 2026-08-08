@@ -9,6 +9,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { validateAccessToken } from '../oauth/store.js';
 import { resolveCodeQRToken } from '../oauth/refresh.js';
+import { CodeQROAuthError } from '../oauth/codeqr-oauth.js';
 import { getServerUrl } from '../config.js';
 
 declare global {
@@ -34,13 +35,18 @@ declare global {
  * authorization server and start the OAuth flow (RFC 9728).
  */
 function unauthorized(req: Request, res: Response, error: string, description: string): void {
-  const params = [`realm="codeqr-mcp"`, `error="${error}"`, `error_description="${description}"`];
-
-  if (error !== 'invalid_request') {
-    params.push(`resource_metadata="${getServerUrl(req)}/.well-known/oauth-protected-resource"`);
-  }
-
-  res.setHeader('WWW-Authenticate', `Bearer ${params.join(', ')}`);
+  // resource_metadata goes on every 401, including the one answering a request
+  // with no token at all — that is the first call any MCP client makes and the
+  // only place it can bootstrap discovery from.
+  res.setHeader(
+    'WWW-Authenticate',
+    [
+      `Bearer realm="codeqr-mcp"`,
+      `error="${error}"`,
+      `error_description="${description}"`,
+      `resource_metadata="${getServerUrl(req)}/.well-known/oauth-protected-resource"`,
+    ].join(', '),
+  );
   res.status(401).json({ error, error_description: description });
 }
 
@@ -72,16 +78,26 @@ export async function requireBearerToken(
   let codeqrToken: string;
   try {
     codeqrToken = await resolveCodeQRToken(accessToken);
-  } catch {
-    // The refresh token is spent, revoked, or past its 120 days. Nothing here
-    // can recover it — the user has to authorize again, and invalid_token is
-    // what tells the client to walk them through that.
-    unauthorized(
-      req,
-      res,
-      'invalid_token',
-      'CodeQR authorization has expired. Please reconnect the app.',
-    );
+  } catch (err) {
+    // Only `invalid_grant` means the authorization is genuinely gone — spent,
+    // revoked, or past its 120 days. Everything else (CodeQR 5xx, an Upstash
+    // blip, the wait timing out) is temporary, and answering 401 for those
+    // would send the user to re-authorize over a problem that fixes itself —
+    // and each re-authorization costs them their other MCP session.
+    if (err instanceof CodeQROAuthError && err.code === 'invalid_grant') {
+      unauthorized(
+        req,
+        res,
+        'invalid_token',
+        'CodeQR authorization is no longer valid. Please reconnect the app.',
+      );
+      return;
+    }
+
+    res.status(503).json({
+      error: 'temporarily_unavailable',
+      error_description: 'Could not renew CodeQR authorization right now. Try again shortly.',
+    });
     return;
   }
 

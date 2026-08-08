@@ -1,8 +1,8 @@
 name: Close external PRs
 
 # Este repositório não aceita contribuições externas. Como o GitHub não permite
-# desativar pull requests em repositórios públicos, qualquer PR aberto por alguém
-# fora da organização é fechado automaticamente.
+# desativar pull requests em repositórios públicos, qualquer PR aberto de fora
+# da equipe é fechado automaticamente.
 #
 # Usa `pull_request_target` para rodar no contexto do repositório base (token com
 # permissão de escrita). O código do PR NUNCA é baixado nem executado — o job só
@@ -17,10 +17,27 @@ permissions:
 
 jobs:
   close:
-    # Passam: owner, membros da org e colaboradores do repo, além de bots conhecidos.
-    if: >-
-      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      && !contains(fromJSON('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+    # O teste é a origem do branch, não a associação do autor.
+    #
+    # A versão anterior checava `author_association` contra OWNER/MEMBER/
+    # COLLABORATOR, e fechou o PR #4 — aberto por um admin da organização, de um
+    # branch deste próprio repositório. Esse campo carrega apenas o que é
+    # publicamente visível: com a associação à organização definida como
+    # privada, um mantenedor chega ao payload como se fosse alguém de fora, e o
+    # workflow fecha o PR do próprio time.
+    #
+    # `head.repo` não tem essa ambiguidade. Num repositório público, quem não
+    # tem acesso de escrita não consegue criar branch aqui — só pode abrir PR a
+    # partir de um fork. Logo, branch deste repositório implica acesso de
+    # escrita, e isso vale independentemente de a associação ser pública ou não.
+    #
+    # Consequência aceita: um membro do time que abrir PR a partir de um fork
+    # pessoal também é fechado. A saída é empurrar o branch para este
+    # repositório, que é o fluxo normal do time.
+    #
+    # Isso também dispensa a allowlist de bots que existia aqui: Dependabot e
+    # Renovate criam branches neste repositório, não em forks, então já passam.
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Comment and close

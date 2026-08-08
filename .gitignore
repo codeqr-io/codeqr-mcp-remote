@@ -3,5 +3,7 @@ dist/
 .env
 *.log
 
-# Chaves de assinatura do MCP Registry (DNS auth) — nunca versionar
+# MCP Registry signing keys (DNS auth). The private key authorizes publishing
+# under the io.codeqr namespace — it never belongs in the repo.
 *.pem
+*.key

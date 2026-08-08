@@ -124,6 +124,8 @@ response = client.responses.create(
 | `delete_link` | Delete a link |
 | `create_qrcode` | Create a dynamic QR code encoding a URL, Wi-Fi credentials, a contact card, WhatsApp, email, SMS, a phone number, text or a crypto request |
 | `list_qrcodes` | List all QR codes |
+| `update_qrcode` | Change where an existing QR code points, without reprinting it |
+| `delete_qrcode` | Delete a QR code; printed copies stop resolving |
 | `get_analytics` | Query click analytics |
 | `list_domains` | List custom domains |
 | `list_tags` | List tags |
@@ -171,6 +173,33 @@ src/
 - **Add HTTPS** (usually handled by your reverse proxy / platform)
 - **Add monitoring** (the `/health` endpoint is ready for probes)
 - **Consider token rotation** for long-lived sessions
+
+## Publishing to the MCP Registry
+
+This server is listed in the official registry as `io.codeqr/codeqr`. The registry
+stores only the metadata in `server.json` — never the code.
+
+Publishing is authorized by DNS: a TXT record on the **apex** of `codeqr.io` holds
+the public half of an Ed25519 key pair. Apex, not a selector — MCP DNS auth follows
+SPF-style placement, and a record under `_mcp-auth.` fails with a generic signature
+error that does not name the cause.
+
+```bash
+# 1. Bump the version in package.json, src/config.ts and server.json together.
+#    `yarn test` fails if they drift — the registry refuses to republish a
+#    version it already has.
+
+# 2. Authenticate with the private key (kept outside this repo).
+PRIVATE_KEY="$(openssl pkey -in /path/to/codeqr-io.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n')"
+mcp-publisher login dns --domain codeqr.io --private-key "$PRIVATE_KEY"
+
+# 3. Publish, then confirm the entry is live.
+mcp-publisher publish
+curl "https://registry.modelcontextprotocol.io/v0/servers?search=codeqr"
+```
+
+If the key is ever rotated, **remove the old TXT record** — a stale one is tried
+first and makes verification fail.
 
 ## License
 

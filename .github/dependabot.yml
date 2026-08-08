@@ -1,0 +1,31 @@
+# Existe por causa do pin exato em `@codeqr/ts`.
+#
+# Fixar a versão torna todo upgrade uma decisão consciente, que é o que se
+# queria — mas também remove o último caminho pelo qual um patch chegaria
+# sozinho, e este repositório não tinha nenhum bot de dependência. Sem isto, a
+# escolha de fixar só troca "defasagem silenciosa por range" (o que deixou o
+# SDK cinco releases atrás) por "defasagem silenciosa por esquecimento".
+#
+# Dependabot abre o PR; a revisão continua humana, e `tests/tool-params.test.ts`
+# é o que diz se a versão nova mexeu em algo debaixo das tools.
+#
+# Os branches são criados neste repositório, não em fork, então passam pela
+# regra do `close-external-prs.yml`.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Um PR por semana para o ruído de dev, em vez de um por pacote.
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

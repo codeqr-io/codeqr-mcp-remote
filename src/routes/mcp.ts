@@ -130,7 +130,11 @@ const QRCODE_PAYLOAD_PROPERTIES = {
         enum: ['WPA', 'WPA2', 'WEP', 'nopass'],
         description: 'Security type. Use "nopass" for an open network',
       },
-      isHidden: { type: 'boolean', description: 'Whether the network does not broadcast its name' },
+      // `isHidden` is not offered, and cannot be until the app changes. The
+      // payload is validated as `z.record(z.string())`, so a boolean is
+      // rejected outright — and the string that would pass is worse, because
+      // the encoder tests it for truthiness, making "false" encode H:true.
+      // The display page types it as a boolean it can never receive.
     },
     required: ['ssid'],
   },
@@ -159,10 +163,13 @@ const QRCODE_PAYLOAD_PROPERTIES = {
     description: 'For type "crypto": the payment request a scan should open',
     properties: {
       cryptocurrency: { type: 'string', description: 'Currency scheme, e.g. "bitcoin" or "ethereum"' },
-      // The wallet address is stored in a field called `email`. A model asked
-      // for a crypto QR code will reach for `address` or `wallet` and write a
-      // key that is never read.
-      email: { type: 'string', description: 'The destination WALLET ADDRESS. The field is named email, but no email goes here' },
+      // CodeQR reads the wallet address from two different fields depending on
+      // how the code is scanned: the display page every dynamic code lands on
+      // reads `crypto.address`, while `qrCodeConstructor` — the static path —
+      // reads `crypto.email`. This tool only creates dynamic codes, so
+      // `address` is the one that has to be filled; sending `email` produces a
+      // page reading "No crypto payment information available".
+      address: { type: 'string', description: 'The destination wallet address' },
       amount: { type: 'string', description: 'Amount to request' },
       message: { type: 'string', description: 'Note attached to the request' },
     },
@@ -297,7 +304,12 @@ export const TOOLS = [
         fgColor: { type: 'string', description: 'Foreground color hex (optional)' },
         bgColor: { type: 'string', description: 'Background color hex (optional)' },
       },
-      required: ['url'],
+      // Nothing is required across all nine types. `url` used to be, from when
+      // this tool could only make link codes, and leaving it would have made
+      // every wifi or vcard call either rejected by a validating client or
+      // padded with a URL the model invented. What each type needs is declared
+      // on that type's own payload — wifi.ssid, whatsapp.number — and the API
+      // enforces the rest.
     },
   },
   {
@@ -319,7 +331,7 @@ export const TOOLS = [
     name: 'update_qrcode',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the code\'s type — url for a link, wifi for network credentials, and so on. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
+      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
     inputSchema: {
       type: 'object' as const,
       properties: {

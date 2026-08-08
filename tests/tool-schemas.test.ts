@@ -287,20 +287,42 @@ describe('enums match the values the API accepts', () => {
     }
   });
 
-  it('names the payload fields the constructor actually reads', () => {
-    // These three are stored under names nobody would guess, and guessing wrong
-    // saves a record that encodes nothing. Pinned so a rename upstream has to
-    // be noticed here rather than in a scanner that reads a blank code.
+  it('names the payload fields the display page actually reads', () => {
+    // The display page is the right reference, not qrCodeConstructor: this
+    // tool only creates dynamic codes, and every dynamic scan is rewritten to
+    // that page. The two diverge for crypto, and auditing against the
+    // constructor is how `crypto.email` — the static path's field — shipped in
+    // the first draft, producing "No crypto payment information available".
     const props = properties('create_qrcode') as Record<
       string,
       { properties?: Record<string, unknown>; required?: string[] }
     >;
+    expect(Object.keys(props.crypto?.properties ?? {})).toContain('address');
+    expect(Object.keys(props.crypto?.properties ?? {})).not.toContain('email');
+    // Named nothing like what they hold, and identical on both paths.
     expect(Object.keys(props.email?.properties ?? {})).toContain('cco');
     expect(Object.keys(props.sms?.properties ?? {})).toContain('subject');
-    expect(Object.keys(props.crypto?.properties ?? {})).toContain('email');
-    // And the two the API itself rejects when missing.
+    // The two the API itself rejects when missing.
     expect(props.wifi?.required).toEqual(['ssid']);
     expect(props.whatsapp?.required).toEqual(['number']);
+  });
+
+  it('offers no field the API cannot store', () => {
+    // Wi-Fi payloads are validated as a map of strings, so a boolean never
+    // arrives — and the string that would pass encodes the opposite, since the
+    // encoder tests it for truthiness and "false" is truthy.
+    const props = properties('create_qrcode') as Record<
+      string,
+      { properties?: Record<string, unknown> }
+    >;
+    expect(Object.keys(props.wifi?.properties ?? {})).not.toContain('isHidden');
+  });
+
+  it('requires nothing across all nine QR types', () => {
+    // `url` was required back when this tool made link codes only. Left in
+    // place, a wifi or vcard call is either rejected by a validating client or
+    // padded with a URL the model invented.
+    expect(required('create_qrcode')).toEqual([]);
   });
 
   it('constrains the analytics event and groupBy', () => {

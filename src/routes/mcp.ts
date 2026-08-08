@@ -13,10 +13,45 @@ import type { Request, Response } from 'express';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
+/**
+ * Annotations describe what a tool actually does, so the client can decide when
+ * to ask the user for confirmation. They are required for directory submission,
+ * and mislabelled ones are one of the most common rejection reasons.
+ *
+ *   readOnlyHint    — only reads; never changes stored state.
+ *   openWorldHint   — changes something publicly reachable on the internet
+ *                     (a live short link or QR destination), as opposed to
+ *                     private bookkeeping inside the workspace.
+ *   destructiveHint — deletes, overwrites, or causes an effect that cannot be
+ *                     taken back.
+ *
+ * The reading of `openWorldHint` above is the directory's, not the MCP spec's.
+ * The spec frames it as whether the tool's domain of interaction is open or
+ * closed, and defaults it to true — by which every tool here would be true,
+ * since all of them call an external API, and the flag would carry no signal.
+ * The directory asks instead whether the write becomes publicly visible, and
+ * that is the axis encoded here, because that is what the reviewer checks.
+ *
+ * Why `update_link` and `update_qrcode` are destructive: both overwrite the
+ * destination of a code that may already be printed on physical material or
+ * handed out. The record is restorable, the printed sheet is not — so the
+ * caller deserves a confirmation prompt. This mirrors the warning the CodeQR
+ * dashboard already shows before an edit changes an encoded payload.
+ */
+const READ_ONLY = { readOnlyHint: true, openWorldHint: false, destructiveHint: false };
+/** Creates something publicly reachable, but overwrites nothing. */
+const PUBLISHES = { readOnlyHint: false, openWorldHint: true, destructiveHint: false };
+/** Overwrites or removes something publicly reachable. */
+const REWRITES_PUBLIC = { readOnlyHint: false, openWorldHint: true, destructiveHint: true };
+/** Writes only to private workspace state — nothing changes on the open web. */
+const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
+
 const TOOLS = [
   {
     name: 'create_link',
-    description: 'Create a shortened link with CodeQR',
+    annotations: PUBLISHES,
+    description:
+      'Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -34,6 +69,7 @@ const TOOLS = [
   },
   {
     name: 'list_links',
+    annotations: READ_ONLY,
     description: 'List all short links in your CodeQR workspace',
     inputSchema: {
       type: 'object' as const,
@@ -47,6 +83,7 @@ const TOOLS = [
   },
   {
     name: 'get_link_info',
+    annotations: READ_ONLY,
     description: 'Get detailed information about a specific short link',
     inputSchema: {
       type: 'object' as const,
@@ -60,7 +97,9 @@ const TOOLS = [
   },
   {
     name: 'update_link',
-    description: 'Update an existing short link',
+    annotations: REWRITES_PUBLIC,
+    description:
+      'Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change `key`, which rewrites the link itself and breaks every copy already in circulation.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -76,7 +115,8 @@ const TOOLS = [
   },
   {
     name: 'delete_link',
-    description: 'Delete a short link',
+    annotations: REWRITES_PUBLIC,
+    description: 'Delete a short link. Anything already shared stops resolving.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -87,11 +127,23 @@ const TOOLS = [
   },
   {
     name: 'create_qrcode',
-    description: 'Generate a QR code for a URL',
+    annotations: PUBLISHES,
+    description:
+      'Create a dynamic QR code. The code encodes a short link rather than the destination itself, so the destination can be changed later with update_qrcode without reprinting the code. Scans are recorded.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        url: { type: 'string', description: 'The URL to encode in the QR code' },
+        url: { type: 'string', description: 'The destination the QR code should lead to' },
+        // Required by the API and by the SDK's own types, and it was missing:
+        // every call this tool made was rejected before reaching creation. The
+        // `as any` in the handler is what kept the compiler quiet about it.
+        type: {
+          type: 'string',
+          enum: ['url', 'text', 'email', 'wifi', 'phone', 'vcard', 'crypto', 'sms', 'facetime', 'latlog'],
+          description: 'What kind of content the QR code encodes. Defaults to "url".',
+        },
+        domain: { type: 'string', description: 'Domain for the underlying short link (optional)' },
+        key: { type: 'string', description: 'Custom slug for the underlying short link (optional, auto-generated if omitted)' },
         size: { type: 'number', description: 'Size in pixels (optional)' },
         level: { type: 'string', enum: ['L', 'M', 'Q', 'H'], description: 'Error correction level (optional)' },
         fgColor: { type: 'string', description: 'Foreground color hex (optional)' },
@@ -102,6 +154,7 @@ const TOOLS = [
   },
   {
     name: 'list_qrcodes',
+    annotations: READ_ONLY,
     description: 'List all QR codes in your workspace',
     inputSchema: {
       type: 'object' as const,
@@ -110,24 +163,66 @@ const TOOLS = [
       },
     },
   },
+  // A `get_qrcode_info` tool was drafted here and pulled back out: the SDK's
+  // retrieve() takes domain + key + projectSlug, not the id this server has,
+  // so the tool would only ever have failed. `list_qrcodes` already returns
+  // the id, destination and scan count, which is what it was there for.
+  {
+    name: 'update_qrcode',
+    annotations: REWRITES_PUBLIC,
+    description:
+      'Change where a dynamic QR code leads, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new destination. This does NOT apply to static QR codes, which encode the destination directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old destination forever. Check whether the code is static before promising the change reaches printed material.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        qrcodeId: { type: 'string', description: 'The QR code ID to update' },
+        url: { type: 'string', description: 'New destination URL (optional)' },
+        fgColor: { type: 'string', description: 'New foreground color hex (optional)' },
+        bgColor: { type: 'string', description: 'New background color hex (optional)' },
+        archived: { type: 'boolean', description: 'Archive status (optional)' },
+      },
+      required: ['qrcodeId'],
+    },
+  },
+  {
+    name: 'delete_qrcode',
+    annotations: REWRITES_PUBLIC,
+    description: 'Delete a QR code. Any printed copy stops resolving and cannot be recovered by reprinting.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        qrcodeId: { type: 'string', description: 'The QR code ID to delete' },
+      },
+      required: ['qrcodeId'],
+    },
+  },
   {
     name: 'get_analytics',
-    description: 'Get analytics data for your links (clicks, countries, devices, etc.)',
+    annotations: READ_ONLY,
+    description:
+      'Get scan and click analytics — workspace-wide, or for one link or QR code. Group by time, country, city, device, or browser.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         event: {
           type: 'string',
-          enum: ['clicks', 'leads', 'sales'],
-          description: 'Event type to query',
+          // 'scans' is what makes a QR code measurable at all; leaving it out
+          // meant an agent could never answer "how many scans did this get".
+          enum: ['clicks', 'scans', 'leads', 'sales', 'composite'],
+          description: 'Event type to query. Use "scans" for QR codes and "clicks" for short links.',
         },
         groupBy: {
+          // Deliberately narrower than the API accepts: 'clicks', 'scans' and
+          // 'views' are also valid values upstream but currently answer 500,
+          // so offering them here would only send the agent into a failure.
           type: 'string',
-          enum: ['count', 'timeseries', 'countries', 'cities', 'devices', 'browsers', 'os', 'referers', 'top_links', 'top_urls'],
+          enum: ['count', 'timeseries', 'countries', 'cities', 'devices', 'browsers', 'os', 'referers', 'top_links', 'top_qrcodes', 'top_urls'],
           description: 'How to group the results',
         },
         linkId: { type: 'string', description: 'Filter by link ID (optional)' },
+        qrcodeId: { type: 'string', description: 'Filter by QR code ID (optional)' },
         domain: { type: 'string', description: 'Filter by domain (optional)' },
+        key: { type: 'string', description: 'Filter by slug/key, use with domain (optional)' },
         interval: { type: 'string', description: 'Time interval: 24h, 7d, 30d, 90d (optional)' },
       },
       required: ['event', 'groupBy'],
@@ -135,16 +230,20 @@ const TOOLS = [
   },
   {
     name: 'list_domains',
+    annotations: READ_ONLY,
     description: 'List custom domains configured in your workspace',
     inputSchema: { type: 'object' as const, properties: {} },
   },
   {
     name: 'list_tags',
+    annotations: READ_ONLY,
     description: 'List all tags in your workspace',
     inputSchema: { type: 'object' as const, properties: {} },
   },
   {
     name: 'create_tag',
+    // Organisational label inside the workspace — nothing on the open web changes.
+    annotations: PRIVATE_WRITE,
     description: 'Create a new tag for organizing links',
     inputSchema: {
       type: 'object' as const,
@@ -157,6 +256,8 @@ const TOOLS = [
   },
   {
     name: 'track_lead',
+    // Records a conversion event against our own analytics. Nothing is published.
+    annotations: PRIVATE_WRITE,
     description: 'Track a lead conversion attributed to a short link',
     inputSchema: {
       type: 'object' as const,
@@ -172,6 +273,7 @@ const TOOLS = [
   },
   {
     name: 'track_sale',
+    annotations: PRIVATE_WRITE,
     description: 'Track a sale conversion attributed to a short link',
     inputSchema: {
       type: 'object' as const,
@@ -217,10 +319,21 @@ async function handleToolCall(
         result = await client.links.delete(args.linkId as string);
         break;
       case 'create_qrcode':
-        result = await client.qrcodes.create(args as any);
+        // `type` is required upstream with no default of its own. Filling it
+        // here keeps the common "make a QR code for this URL" call working
+        // instead of failing validation before anything is created.
+        result = await client.qrcodes.create({ type: 'url', ...args } as any);
         break;
       case 'list_qrcodes':
         result = await client.qrcodes.list(args as any);
+        break;
+      case 'update_qrcode': {
+        const { qrcodeId, ...params } = args as any;
+        result = await client.qrcodes.update(qrcodeId, params);
+        break;
+      }
+      case 'delete_qrcode':
+        result = await client.qrcodes.delete(args.qrcodeId as string);
         break;
       case 'get_analytics':
         result = await client.analytics.retrieve(args as any);
@@ -277,9 +390,10 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
     { name: 'codeqr', version: '0.19.3' },
     {
       instructions: [
-        'You are connected to the CodeQR API via MCP.',
-        'You can create short links, generate QR codes, view analytics, manage domains and tags, and track conversions.',
-        'Use the available tools to help the user manage their CodeQR resources.',
+        'You are connected to CodeQR via MCP.',
+        'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
+        'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
+        'You can create and update short links and QR codes, read scan and click analytics, manage domains and tags, and track conversions.',
       ].join(' '),
       capabilities: { tools: {} },
     },

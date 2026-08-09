@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TOOLS } from '../src/routes/mcp.js';
 
 type Tool = (typeof TOOLS)[number];
@@ -106,6 +107,40 @@ describe('tool inventory', () => {
     for (const t of TOOLS) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
+  });
+});
+
+describe('titles', () => {
+  it('gives every tool a title', () => {
+    for (const t of TOOLS) {
+      expect(t.title, t.name).toBeTruthy();
+    }
+  });
+
+  it('never lets the title collapse back into the identifier', () => {
+    // `title` exists so a client shows something other than the raw `name`.
+    // One equal to the name, or still carrying its underscores, leaves the
+    // list reading exactly as it did with no title at all.
+    for (const t of TOOLS) {
+      expect(t.title, t.name).not.toBe(t.name);
+      expect(t.title, t.name).not.toMatch(/_/);
+    }
+  });
+
+  it('keeps every title distinct', () => {
+    // Two tools sharing a label are indistinguishable at the point the user
+    // approves the call — including for the four that overwrite or delete.
+    expect(new Set(TOOLS.map((t) => t.title)).size).toBe(TOOLS.length);
+  });
+
+  it('still carries the titles after the SDK parses the list for the wire', () => {
+    // `tools: TOOLS` goes to the SDK, which runs it through Zod on the way
+    // out. Zod drops keys its schema does not declare, and the compiler will
+    // not catch that: excess-property checking applies to object literals, and
+    // this is a variable. So typecheck passing proves the field is accepted,
+    // never that it is delivered — the SDK version is what decides.
+    const wire = ListToolsResultSchema.parse({ tools: TOOLS });
+    expect(wire.tools.map((t) => t.title)).toEqual(TOOLS.map((t) => t.title));
   });
 });
 

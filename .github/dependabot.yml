@@ -24,6 +24,25 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+    ignore:
+      # O major do TypeScript não é uma decisão de dependência, é uma decisão de
+      # deploy: `@vercel/node` compila `api/server.ts` pela API programática do
+      # compilador, e o TypeScript 7 (port nativo) exporta só `version` e
+      # `versionMajorMinor`. O build morre em `ts.sys.readFile` com uma mensagem
+      # que não cita TypeScript nem versão.
+      #
+      # O que torna isto perigoso é que nada local reprova: `tsc` continua
+      # funcionando sob o 7, então typecheck, testes e build passam enquanto o
+      # deploy quebra. Foi assim que o 7.0.2 entrou.
+      #
+      # `tests/typescript-compat.test.ts` é a rede; este ignore evita que o PR
+      # apareça toda semana. Remover os dois quando o builder suportar o 7.
+      #
+      # `versions` em vez de `update-types: semver-major`: o problema é o 7, não
+      # "qualquer major". O 6.x mantém `ts.sys` e não teria quebrado nada —
+      # bloquear por tipo de update barraria também o que funciona.
+      - dependency-name: typescript
+        versions: ['>=7']
 
   - package-ecosystem: github-actions
     directory: /

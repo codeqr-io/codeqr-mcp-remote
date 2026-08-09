@@ -1,0 +1,36 @@
+# Roda o mesmo `yarn verify` que se roda localmente, em todo PR e em todo push
+# para main.
+#
+# Existe porque o repositório não tinha nenhum check automático: o único
+# workflow era `close-external-prs.yml`, que fecha PRs de fork e não executa
+# nada. Na prática, um PR do Dependabot podia ser mergeado sem que uma linha de
+# teste rodasse — foi assim que o major do TypeScript entrou e derrubou os
+# deploys, com typecheck, testes e build todos verdes na máquina de quem não
+# reinstalou as dependências.
+#
+# `--frozen-lockfile` é o ponto: instala exatamente o que o lockfile declara,
+# que é o que a Vercel também faz. Um teste que valida a versão instalada só
+# tem valor se algo instalar do zero antes de rodá-lo.
+
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      # typecheck + testes + build, o mesmo alvo do gate local.
+      - run: yarn verify

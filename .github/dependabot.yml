@@ -37,8 +37,12 @@ updates:
       #
       # `tests/typescript-compat.test.ts` é a rede; este ignore evita que o PR
       # apareça toda semana. Remover os dois quando o builder suportar o 7.
+      #
+      # `versions` em vez de `update-types: semver-major`: o problema é o 7, não
+      # "qualquer major". O 6.x mantém `ts.sys` e não teria quebrado nada —
+      # bloquear por tipo de update barraria também o que funciona.
       - dependency-name: typescript
-        update-types: [version-update:semver-major]
+        versions: ['>=7']
 
   - package-ecosystem: github-actions
     directory: /

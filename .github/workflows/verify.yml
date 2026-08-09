@@ -28,7 +28,7 @@ jobs:
       # Tem que acompanhar o `engines.node` do package.json. Não é preferência:
       # `nanoid@6` recusa a instalação abaixo de 22, então um runner mais velho
       # falha no `yarn install`, antes de qualquer teste rodar.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: yarn

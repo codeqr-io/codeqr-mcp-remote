@@ -133,14 +133,19 @@ describe('titles', () => {
     expect(new Set(TOOLS.map((t) => t.title)).size).toBe(TOOLS.length);
   });
 
-  it('still carries the titles after the SDK parses the list for the wire', () => {
-    // `tools: TOOLS` goes to the SDK, which runs it through Zod on the way
-    // out. Zod drops keys its schema does not declare, and the compiler will
-    // not catch that: excess-property checking applies to object literals, and
-    // this is a variable. So typecheck passing proves the field is accepted,
-    // never that it is delivered — the SDK version is what decides.
-    const wire = ListToolsResultSchema.parse({ tools: TOOLS });
-    expect(wire.tools.map((t) => t.title)).toEqual(TOOLS.map((t) => t.title));
+  it('keeps the titles a client parsing with this SDK would accept', () => {
+    // Not a check on what this server sends: the handler's return value goes
+    // out untouched (`shared/protocol.js` wraps it in the envelope and hands
+    // it to the transport). The strip happens on the client, which parses our
+    // response with this same schema and drops what it does not declare.
+    //
+    // So this pins the contract rather than our output, and typecheck cannot
+    // pin it for us — `tools: TOOLS` passes a variable, so excess-property
+    // checking never runs, and a `title` the compiler accepts could still be
+    // one no client keeps. `ListToolsResultSchema` strips rather than passes
+    // through, so an SDK bump that drops the field fails here.
+    const asClientSees = ListToolsResultSchema.parse({ tools: TOOLS });
+    expect(asClientSees.tools.map((t) => t.title)).toEqual(TOOLS.map((t) => t.title));
   });
 });
 

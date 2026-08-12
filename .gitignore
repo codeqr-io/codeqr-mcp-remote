@@ -2,3 +2,8 @@ node_modules/
 dist/
 .env
 *.log
+
+# MCP Registry signing keys (DNS auth). The private key authorizes publishing
+# under the io.codeqr namespace — it never belongs in the repo.
+*.pem
+*.key

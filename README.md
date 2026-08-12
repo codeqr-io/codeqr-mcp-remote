@@ -124,6 +124,8 @@ response = client.responses.create(
 | `delete_link` | Delete a link |
 | `create_qrcode` | Create a dynamic QR code encoding a URL, Wi-Fi credentials, a contact card, WhatsApp, email, SMS, a phone number, text or a crypto request |
 | `list_qrcodes` | List all QR codes |
+| `update_qrcode` | Change where an existing QR code points, without reprinting it |
+| `delete_qrcode` | Delete a QR code; printed copies stop resolving |
 | `get_analytics` | Query click analytics |
 | `list_domains` | List custom domains |
 | `list_tags` | List tags |
@@ -173,6 +175,57 @@ src/
 - **Add HTTPS** (usually handled by your reverse proxy / platform)
 - **Add monitoring** (the `/health` endpoint is ready for probes)
 - **Consider token rotation** for long-lived sessions
+
+## Publishing to the MCP Registry
+
+This server is listed in the official registry as `io.codeqr/codeqr`. The registry
+stores only the metadata in `server.json` — never the code.
+
+Publishing is authorized by DNS: a TXT record on the **apex** of `codeqr.io` holds
+the public half of an Ed25519 key pair. Apex, not a selector — MCP DNS auth follows
+SPF-style placement, and a record under `_mcp-auth.` fails with a generic signature
+error that does not name the cause.
+
+```bash
+# 1. Bump the version in package.json, src/config.ts and server.json together.
+#    `yarn test` fails if they drift — the registry refuses to republish a
+#    version it already has.
+#
+#    Then bump it in the CodeQR app too: the Server Card at
+#    app/.well-known/mcp/server-card.json/route.ts advertises this server's
+#    version, and no test can reach across repos to check. It already drifted
+#    once, to a release that never existed.
+
+# 2. Authenticate with the private key (kept outside this repo).
+PRIVATE_KEY="$(openssl pkey -in /path/to/codeqr-io.pem -noout -text | grep -A3 "priv:" | tail -n +2 | tr -d ' :\n')"
+mcp-publisher login dns --domain codeqr.io --private-key "$PRIVATE_KEY"
+
+# 3. Publish, then confirm the entry is live.
+mcp-publisher publish
+curl "https://registry.modelcontextprotocol.io/v0/servers?search=codeqr"
+```
+
+If the key is ever rotated, **remove the old TXT record** — a stale one is tried
+first and makes verification fail.
+
+### Directory listings
+
+Aggregators crawl the ecosystem and list servers whether or not anyone claims them,
+so an unclaimed entry still exists — as a bot's guess at what this server does.
+Claiming replaces the guess and unlocks editing the name and description a reader
+sees. None of this is done by merging a file; each one is a one-time action on the
+aggregator's own site.
+
+| Directory | How ownership is claimed | Status |
+|-----------|--------------------------|--------|
+| [Official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp-publisher` + DNS, as above | listed |
+| [Glama](https://glama.ai) | `glama.json` in this repo, then run the claim flow once from an account listed in `maintainers` | file in repo; claim pending |
+| [Smithery](https://smithery.ai) | `smithery mcp publish https://mcp.codeqr.io/mcp -n <org>/<name>` | pending |
+| [PulseMCP](https://pulsemcp.com) | hand-reviewed submission on their site | pending |
+| [mcp.so](https://mcp.so) | submission form / GitHub issue | pending |
+
+The GitHub OAuth route Glama also offers only associates repos under a **personal**
+account, which this repo is not — it belongs to the `codeqr-io` org. Hence the file.
 
 ## License
 

@@ -16,6 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { SERVER_INSTRUCTIONS, TOOLS } from '../src/routes/mcp.js';
 
 type Tool = (typeof TOOLS)[number];
@@ -120,6 +121,45 @@ describe('tool inventory', () => {
     for (const t of TOOLS) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);
     }
+  });
+});
+
+describe('titles', () => {
+  it('gives every tool a title', () => {
+    for (const t of TOOLS) {
+      expect(t.title, t.name).toBeTruthy();
+    }
+  });
+
+  it('never lets the title collapse back into the identifier', () => {
+    // `title` exists so a client shows something other than the raw `name`.
+    // One equal to the name, or still carrying its underscores, leaves the
+    // list reading exactly as it did with no title at all.
+    for (const t of TOOLS) {
+      expect(t.title, t.name).not.toBe(t.name);
+      expect(t.title, t.name).not.toMatch(/_/);
+    }
+  });
+
+  it('keeps every title distinct', () => {
+    // Two tools sharing a label are indistinguishable at the point the user
+    // approves the call — including for the four that overwrite or delete.
+    expect(new Set(TOOLS.map((t) => t.title)).size).toBe(TOOLS.length);
+  });
+
+  it('keeps the titles a client parsing with this SDK would accept', () => {
+    // Not a check on what this server sends: the handler's return value goes
+    // out untouched (`shared/protocol.js` wraps it in the envelope and hands
+    // it to the transport). The strip happens on the client, which parses our
+    // response with this same schema and drops what it does not declare.
+    //
+    // So this pins the contract rather than our output, and typecheck cannot
+    // pin it for us — `tools: TOOLS` passes a variable, so excess-property
+    // checking never runs, and a `title` the compiler accepts could still be
+    // one no client keeps. `ListToolsResultSchema` strips rather than passes
+    // through, so an SDK bump that drops the field fails here.
+    const asClientSees = ListToolsResultSchema.parse({ tools: TOOLS });
+    expect(asClientSees.tools.map((t) => t.title)).toEqual(TOOLS.map((t) => t.title));
   });
 });
 

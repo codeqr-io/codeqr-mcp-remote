@@ -212,6 +212,7 @@ export const SERVER_INSTRUCTIONS = [
 export const TOOLS = [
   {
     name: 'create_link',
+    title: 'Create Short Link',
     annotations: PUBLISHES,
     description:
       'Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link.',
@@ -237,6 +238,7 @@ export const TOOLS = [
   },
   {
     name: 'list_links',
+    title: 'List Short Links',
     annotations: READ_ONLY,
     description: 'List all short links in your CodeQR workspace',
     inputSchema: {
@@ -262,6 +264,7 @@ export const TOOLS = [
   // returns, and so the one an agent has in hand.
   {
     name: 'get_link_info',
+    title: 'Get Link Details',
     annotations: READ_ONLY,
     description:
       'Get detailed information about one short link. Identify it by linkId, or by externalId, or by domain and key together (for codeqr.link/github: domain "codeqr.link", key "github"). Pass at least one of those.',
@@ -277,6 +280,7 @@ export const TOOLS = [
   },
   {
     name: 'update_link',
+    title: 'Update Short Link',
     annotations: REWRITES_PUBLIC,
     description:
       'Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change `key`, which rewrites the link itself and breaks every copy already in circulation.',
@@ -300,6 +304,7 @@ export const TOOLS = [
   },
   {
     name: 'delete_link',
+    title: 'Delete Short Link',
     annotations: REWRITES_PUBLIC,
     description: 'Delete a short link. Anything already shared stops resolving.',
     inputSchema: {
@@ -312,6 +317,7 @@ export const TOOLS = [
   },
   {
     name: 'create_qrcode',
+    title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
       'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose.',
@@ -345,6 +351,7 @@ export const TOOLS = [
   },
   {
     name: 'list_qrcodes',
+    title: 'List QR Codes',
     annotations: READ_ONLY,
     description: 'List all QR codes in your workspace',
     inputSchema: {
@@ -360,6 +367,7 @@ export const TOOLS = [
   // the id, destination and scan count, which is what it was there for.
   {
     name: 'update_qrcode',
+    title: 'Update QR Code',
     annotations: REWRITES_PUBLIC,
     description:
       'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
@@ -380,6 +388,7 @@ export const TOOLS = [
   },
   {
     name: 'delete_qrcode',
+    title: 'Delete QR Code',
     annotations: REWRITES_PUBLIC,
     description: 'Delete a QR code. Any printed copy stops resolving and cannot be recovered by reprinting.',
     inputSchema: {
@@ -392,6 +401,7 @@ export const TOOLS = [
   },
   {
     name: 'get_analytics',
+    title: 'Get Analytics',
     annotations: READ_ONLY,
     description:
       'Get scan and click analytics — workspace-wide, or for one link or QR code. Group by time, country, city, device, or browser.',
@@ -452,6 +462,7 @@ export const TOOLS = [
   },
   {
     name: 'list_domains',
+    title: 'List Custom Domains',
     annotations: READ_ONLY,
     description: 'List custom domains configured in your workspace',
     inputSchema: {
@@ -465,6 +476,7 @@ export const TOOLS = [
   },
   {
     name: 'list_tags',
+    title: 'List Tags',
     annotations: READ_ONLY,
     description: 'List all tags in your workspace',
     inputSchema: {
@@ -478,6 +490,7 @@ export const TOOLS = [
   },
   {
     name: 'create_tag',
+    title: 'Create Tag',
     // Organisational label inside the workspace — nothing on the open web changes.
     annotations: PRIVATE_WRITE,
     description: 'Create a new tag for organizing links',
@@ -501,6 +514,7 @@ export const TOOLS = [
   // otherwise discover by taking a 403 halfway through a batch.
   {
     name: 'get_workspace',
+    title: 'Get Workspace',
     annotations: READ_ONLY,
     description:
       'Get the CodeQR workspace this connection is authorized for, including its name, slug and plan. Useful before creating in bulk or using a feature the plan may not include.',

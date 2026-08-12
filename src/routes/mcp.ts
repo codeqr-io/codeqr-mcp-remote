@@ -197,6 +197,18 @@ const QRCODE_PAYLOAD_PROPERTIES = {
   },
 } as const;
 
+// Exported so tests can hold this capability claim against what the tool
+// schemas actually declare — this string has shipped an overclaim in both
+// directions before.
+export const SERVER_INSTRUCTIONS = [
+  'You are connected to CodeQR via MCP.',
+  'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
+  'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
+  'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
+  'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
+  'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
+].join(' ');
+
 export const TOOLS = [
   {
     name: 'create_link',
@@ -214,11 +226,11 @@ export const TOOLS = [
         comments: { type: 'string', description: 'Internal notes (optional)' },
         expiresAt: { type: 'string', description: 'Expiration date ISO 8601 (optional)' },
         password: { type: 'string', description: 'Password protect the link (optional)' },
-        trackConversion: { type: 'boolean', description: 'Enable conversion tracking for this link (optional)' },
-        proxy: { type: 'boolean', description: 'Use a custom social media preview instead of the destination page metadata (optional)' },
-        title: { type: 'string', description: 'Custom preview title (optional; used when proxy is true)' },
-        description: { type: 'string', description: 'Custom preview description (optional; used when proxy is true)' },
-        image: { type: 'string', description: 'Custom preview image URL (optional; used when proxy is true)' },
+        trackConversion: { type: 'boolean', description: 'Enable conversion tracking for this link (optional; only on plans that include conversion tracking — on other plans the API rejects the entire call. Appends a cq_id attribution parameter to the destination URL)' },
+        proxy: { type: 'boolean', description: 'Show a custom social media preview instead of the destination page metadata (optional; set title, description and image in the same call — proxy without them renders an empty preview card)' },
+        title: { type: 'string', description: 'Custom preview title (optional; used with proxy, truncated at 120 chars)' },
+        description: { type: 'string', description: 'Custom preview description (optional; used with proxy, truncated at 240 chars)' },
+        image: { type: 'string', description: 'Custom preview image URL (optional; used with proxy)' },
       },
       required: ['url'],
     },
@@ -277,11 +289,11 @@ export const TOOLS = [
         archived: { type: 'boolean', description: 'Archive status (optional)' },
         expiresAt: { type: 'string', description: 'New expiration date (optional)' },
         comments: { type: 'string', description: 'Updated comments (optional)' },
-        trackConversion: { type: 'boolean', description: 'Enable conversion tracking for this link (optional)' },
-        proxy: { type: 'boolean', description: 'Use a custom social media preview instead of the destination page metadata (optional)' },
-        title: { type: 'string', description: 'Custom preview title (optional; used when proxy is true)' },
-        description: { type: 'string', description: 'Custom preview description (optional; used when proxy is true)' },
-        image: { type: 'string', description: 'Custom preview image URL (optional; used when proxy is true)' },
+        trackConversion: { type: 'boolean', description: 'Enable conversion tracking for this link (optional; only on plans that include conversion tracking — on other plans the API rejects the entire call. Appends a cq_id attribution parameter to the destination URL)' },
+        proxy: { type: 'boolean', description: 'Show a custom social media preview instead of the destination page metadata (optional; set title, description and image in the same call — proxy without them renders an empty preview card)' },
+        title: { type: 'string', description: 'Custom preview title (optional; used with proxy, truncated at 120 chars)' },
+        description: { type: 'string', description: 'Custom preview description (optional; used with proxy, truncated at 240 chars)' },
+        image: { type: 'string', description: 'Custom preview image URL (optional; used with proxy)' },
       },
       required: ['linkId'],
     },
@@ -643,13 +655,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   const server = new McpServer(
     { name: 'codeqr', version: SERVER_VERSION },
     {
-      instructions: [
-        'You are connected to CodeQR via MCP.',
-        'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
-        'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
-        'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
-        'Per-link conversion tracking can be enabled with trackConversion on create_link/update_link; link objects report clicks, leads and sales counters. Links can also carry a custom social preview (proxy + title/description/image).',
-      ].join(' '),
+      instructions: SERVER_INSTRUCTIONS,
       capabilities: { tools: {} },
     },
   );

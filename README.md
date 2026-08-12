@@ -130,9 +130,11 @@ response = client.responses.create(
 | `create_tag` | Create a tag |
 | `get_workspace` | Read the authorized workspace: name, slug and plan |
 
-Conversion tracking is not offered. `track_lead` and `track_sale` need the
+Conversion event tools are not offered. `track_lead` and `track_sale` need the
 `conversions.write` scope, which CodeQR grants to workspace owners only, and
 requesting it makes CodeQR reject the whole authorization for everyone else.
+The per-link `trackConversion` toggle is a `links.write` field and IS exposed
+on `create_link`/`update_link` (plans that include conversion tracking only).
 
 ## API Endpoints
 

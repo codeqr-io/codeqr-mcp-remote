@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { ListToolsResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import { TOOLS } from '../src/routes/mcp.js';
+import { SERVER_INSTRUCTIONS, TOOLS } from '../src/routes/mcp.js';
 
 type Tool = (typeof TOOLS)[number];
 
@@ -94,13 +94,27 @@ describe('tool inventory', () => {
     ]);
   });
 
-  it('does not offer conversion tracking', () => {
+  it('does not offer conversion event tools', () => {
     // Restoring these needs the `conversions.write` scope, which cannot be
     // requested without locking non-owners out of the connection entirely.
-    // Re-adding the tool alone would ship two calls that always fail.
+    // Re-adding the tool alone would ship two calls that always fail. The
+    // per-link trackConversion toggle is a links.write field and is exposed.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain('track_lead');
     expect(names).not.toContain('track_sale');
+  });
+
+  it('instructions only claim capabilities the schemas declare', () => {
+    // The instructions string has shipped an overclaim in both directions:
+    // it once promised conversion tracking the tools could not deliver, and
+    // later denied a toggle the API accepts.
+    const declares = (name: string, prop: string) =>
+      prop in ((TOOLS.find((t) => t.name === name)?.inputSchema.properties ?? {}) as object);
+    expect(SERVER_INSTRUCTIONS).toContain('trackConversion');
+    expect(declares('create_link', 'trackConversion')).toBe(true);
+    expect(declares('update_link', 'trackConversion')).toBe(true);
+    expect(SERVER_INSTRUCTIONS).toMatch(/conversion events \(leads, sales\) is not available/);
+    expect(TOOLS.map((t) => t.name)).not.toContain('track_lead');
   });
 
   it('names every tool in the snake_case the directory expects', () => {

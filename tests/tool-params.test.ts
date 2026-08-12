@@ -66,12 +66,12 @@ type SubsetOf<Tool, Sdk> = Tool extends Sdk
   ? true
   : ['this tool offers values the SDK rejects:', Exclude<Tool, Sdk>];
 
-const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password'] as const;
+const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password', 'trackConversion', 'proxy', 'title', 'description', 'image'] as const;
 const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
 // All four are keys of LinkRetrieveInfoParams; only the type's required-ness
 // is stricter than the route, which is why the handler casts.
 const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
-const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments'] as const;
+const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments', 'trackConversion', 'proxy', 'title', 'description', 'image'] as const;
 const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
 const CREATE_QRCODE = [...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
 const LIST_QRCODES = ['page'] as const;

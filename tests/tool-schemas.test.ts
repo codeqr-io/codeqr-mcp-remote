@@ -115,6 +115,14 @@ describe('tool inventory', () => {
     expect(declares('update_link', 'trackConversion')).toBe(true);
     expect(SERVER_INSTRUCTIONS).toMatch(/conversion events \(leads, sales\) is not available/);
     expect(TOOLS.map((t) => t.name)).not.toContain('track_lead');
+
+    // Smart rules are announced in the instructions, so both tools have to
+    // actually take them — the A/B claim is the kind that reads as a feature
+    // and fails as an unknown argument.
+    expect(SERVER_INSTRUCTIONS).toMatch(/smart rules/i);
+    expect(SERVER_INSTRUCTIONS).toMatch(/A\/B/);
+    expect(declares('create_link', 'rules')).toBe(true);
+    expect(declares('update_link', 'rules')).toBe(true);
   });
 
   it('names every tool in the snake_case the directory expects', () => {
@@ -218,14 +226,34 @@ describe('schema structure', () => {
     // undescribed property is one it will guess at — and the QR payloads are
     // where guessing is most expensive, because a wrong key saves happily and
     // encodes nothing. So this recurses rather than stopping at the top level.
+    // Descends through `items` as well as `properties`. Stopping at
+    // `properties` left arrays of objects entirely uncovered, which is where
+    // the hardest-to-guess arguments live: `rules` carries its whole meaning
+    // inside items — the condition, the split, the weights that have to total
+    // 100. Arrays of plain strings have nothing to describe, so an `items`
+    // node is only required to carry a description when it has properties.
     const walk = (schema: unknown, path: string): void => {
       const node = schema as {
         description?: string;
         properties?: Record<string, unknown>;
+        required?: string[];
+        items?: { properties?: Record<string, unknown> };
       };
       expect(node.description, path).toBeTruthy();
+
+      // The same check the top-level test does, applied at every depth. A
+      // nested `required: ['weigth']` typechecks, passes every other test, and
+      // makes the client reject the call before it is ever sent — the failure
+      // lands nowhere near the typo.
+      for (const key of node.required ?? []) {
+        expect(Object.keys(node.properties ?? {}), `${path}.required.${key}`).toContain(key);
+      }
+
       for (const [key, child] of Object.entries(node.properties ?? {})) {
         walk(child, `${path}.${key}`);
+      }
+      if (node.items?.properties) {
+        walk(node.items, `${path}[]`);
       }
     };
 

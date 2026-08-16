@@ -12,6 +12,7 @@ import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
 import { SERVER_VERSION } from '../config.js';
+import { validateSmartRules, valueDescription } from '../smart-rules.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -206,8 +207,106 @@ export const SERVER_INSTRUCTIONS = [
   'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
+  'On Business and above, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
   'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
 ].join(' ');
+
+/**
+ * Shared by create_link and update_link, which take the same field.
+ *
+ * Four of the five invariants cannot be expressed in JSON Schema at all — the
+ * weights adding to 100, the url/split exclusivity, the all-or-nothing
+ * condition, the unconditional rule having to come last. They live in the
+ * descriptions here and are enforced in `validateSmartRules`.
+ *
+ * `attribute` advertises all twelve the API implements
+ * (`SMART_RULE_ATTRIBUTES` in the CodeQR repo, dispatched one by one in
+ * `match-smart-rule.ts:33-56`). An earlier revision listed the SDK's seven,
+ * reasoning that the other five were a claim nothing verified — which
+ * contradicted this same file exposing `split`, a field that SDK type does not
+ * have at all. The SDK is behind on both; the API is what answers the call.
+ *
+ * `value` is generated from `ATTRIBUTE_VALUE_HINTS`, one entry per attribute,
+ * so the sentence cannot drift from what the middleware compares. Four
+ * attributes are narrower than their names — device (an OS name), region (an
+ * ISO 3166-2 code), language (only the ten locales the app serves) and
+ * referrer (a bare domain) — and a value outside those sets is not an error
+ * anywhere: the API stores it, the validator does not inspect it, and the rule
+ * simply never matches. Writing that as prose got it wrong twice; see the
+ * table's comment.
+ */
+const SMART_RULES_SCHEMA = {
+  // Nullable because clearing is a first-week request — "end the test, send
+  // everyone to the winner" — and the API takes `null` for it
+  // (`rules` is `.nullish()`). Declaring only `array` would have a client that
+  // validates arguments reject the one value that does the job.
+  type: ['array', 'null'] as const,
+  description:
+    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Set to null to remove every rule and send all traffic to the link url — on update_link, that is how a running test is ended.',
+  maxItems: 20,
+  items: {
+    type: 'object' as const,
+    description:
+      'One routing rule: an optional condition, plus a destination that is either a url or a split.',
+    properties: {
+      attribute: {
+        type: 'string' as const,
+        description:
+          'Request attribute to test (optional; required together with operator and value). Omit all three to match all traffic.',
+        enum: [
+          'device',
+          'country',
+          'utm_source',
+          'utm_medium',
+          'utm_campaign',
+          'referrer',
+          'language',
+          'city',
+          'region',
+          'continent',
+          'utm_term',
+          'utm_content',
+        ],
+      },
+      operator: {
+        type: 'string' as const,
+        description: 'How to compare the attribute against value',
+        enum: ['equals', 'not_equals'],
+      },
+      value: {
+        type: 'string' as const,
+        description: valueDescription(),
+      },
+      url: {
+        type: 'string' as const,
+        description:
+          'Destination for traffic matching this rule. Mutually exclusive with split.',
+      },
+      split: {
+        type: 'array' as const,
+        description:
+          'Divide matching traffic between 2-4 destinations. Mutually exclusive with url. A visitor keeps the same variant across visits, for one hour, or 30 days when trackConversion is on.',
+        minItems: 2,
+        maxItems: 4,
+        items: {
+          type: 'object' as const,
+          description: 'One variant of the split',
+          properties: {
+            url: { type: 'string' as const, description: 'Destination for this variant' },
+            weight: {
+              type: 'integer' as const,
+              description:
+                'Share of traffic for this variant, 1-100. The weights of a split must add up to exactly 100.',
+              minimum: 1,
+              maximum: 100,
+            },
+          },
+          required: ['url', 'weight'],
+        },
+      },
+    },
+  },
+};
 
 export const TOOLS = [
   {
@@ -232,6 +331,7 @@ export const TOOLS = [
         title: { type: 'string', description: 'Custom preview title (optional; used with proxy, truncated at 120 chars)' },
         description: { type: 'string', description: 'Custom preview description (optional; used with proxy, truncated at 240 chars)' },
         image: { type: 'string', description: 'Custom preview image URL (optional; used with proxy)' },
+        rules: SMART_RULES_SCHEMA,
       },
       required: ['url'],
     },
@@ -298,6 +398,7 @@ export const TOOLS = [
         title: { type: 'string', description: 'Custom preview title (optional; used with proxy, truncated at 120 chars)' },
         description: { type: 'string', description: 'Custom preview description (optional; used with proxy, truncated at 240 chars)' },
         image: { type: 'string', description: 'Custom preview image URL (optional; used with proxy)' },
+        rules: SMART_RULES_SCHEMA,
       },
       required: ['linkId'],
     },
@@ -552,7 +653,13 @@ function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
 }
 
-async function handleToolCall(
+/**
+ * Exported for the tests. The argument-validation branch is only meaningful at
+ * this call site: a unit test of `validateSmartRules` passes just as happily
+ * when nothing calls it, so the check that matters is that an invalid payload
+ * never reaches `client`.
+ */
+export async function handleToolCall(
   client: Codeqr,
   apiKey: string,
   name: string,
@@ -562,9 +669,16 @@ async function handleToolCall(
     let result: unknown;
 
     switch (name) {
-      case 'create_link':
+      case 'create_link': {
+        // Saves the round-trip, and answers in a sentence rather than the
+        // serialized error body the SDK would surface. See smart-rules.ts.
+        const invalid = validateSmartRules(args.rules);
+        if (invalid) {
+          return { content: [{ type: 'text', text: `Error: ${invalid}` }], isError: true };
+        }
         result = await client.links.create(asParams<Codeqr.LinkCreateParams>(args));
         break;
+      }
       case 'list_links':
         result = await client.links.list(asParams<Codeqr.LinkListParams>(args));
         break;
@@ -579,6 +693,10 @@ async function handleToolCall(
         );
         break;
       case 'update_link': {
+        const invalid = validateSmartRules(args.rules);
+        if (invalid) {
+          return { content: [{ type: 'text', text: `Error: ${invalid}` }], isError: true };
+        }
         const { linkId, ...params } = args;
         result = await client.links.update(
           linkId as string,

@@ -66,12 +66,20 @@ type SubsetOf<Tool, Sdk> = Tool extends Sdk
   ? true
   : ['this tool offers values the SDK rejects:', Exclude<Tool, Sdk>];
 
-const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password', 'trackConversion', 'proxy', 'title', 'description', 'image'] as const;
+// `rules` is checked here by name only, and that is all this file can do: the
+// assertion compares top-level property names, so the shape *inside* rules —
+// where `split` lives — is not covered by anything the compiler runs. The
+// installed SDK's `Rule` predates split and still marks attribute/operator/
+// value as required, so a strict type here would reject payloads the API
+// accepts. `asParams` casts, so the body goes through untouched either way.
+// The day the cast is replaced by real typing, this is the field that breaks,
+// and the fix is regenerating the SDK — not loosening the check.
+const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password', 'trackConversion', 'proxy', 'title', 'description', 'image', 'rules'] as const;
 const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
 // All four are keys of LinkRetrieveInfoParams; only the type's required-ness
 // is stricter than the route, which is why the handler casts.
 const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
-const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments', 'trackConversion', 'proxy', 'title', 'description', 'image'] as const;
+const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments', 'trackConversion', 'proxy', 'title', 'description', 'image', 'rules'] as const;
 const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
 const CREATE_QRCODE = [...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
 const LIST_QRCODES = ['page'] as const;

@@ -138,6 +138,16 @@ requesting it makes CodeQR reject the whole authorization for everyone else.
 The per-link `trackConversion` toggle is a `links.write` field and IS exposed
 on `create_link`/`update_link` (plans that include conversion tracking only).
 
+Smart rules are exposed on `create_link`/`update_link` as `rules`: conditional
+routing by device, country, UTM, referrer or language, and traffic splitting
+across 2-4 destinations, which is how an A/B test is expressed — one rule with
+no condition and a `split`. Business plan and above; below it the API rejects
+the whole call. Four of the field's invariants cannot be stated in JSON Schema
+(weights totalling 100, `url` xor `split`, the all-or-nothing condition, the
+unconditional rule coming last), so they are checked in `src/smart-rules.ts`
+before the request is sent — a rejected call surfaces only its status line, so
+without that check the caller gets `422` and no reason.
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |

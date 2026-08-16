@@ -15,7 +15,7 @@
   "dependencies": {
     "@codeqr/ts": "0.24.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@upstash/redis": "^1.35.0",
+    "@upstash/redis": "^1.38.2",
     "cors": "^2.8.5",
     "express": "^5.1.0",
     "jose": "^6.2.8",

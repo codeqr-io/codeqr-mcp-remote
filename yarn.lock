@@ -543,10 +543,10 @@
     "@types/methods" "^1.1.4"
     "@types/superagent" "^8.1.0"
 
-"@upstash/redis@^1.35.0":
-  version "1.37.0"
-  resolved "https://registry.yarnpkg.com/@upstash/redis/-/redis-1.37.0.tgz#76a1efa33ab89eaf078697d5f7e5a91713e050fb"
-  integrity sha512-LqOJ3+XWPLSZ2rGSed5DYG3ixybxb8EhZu3yQqF7MdZX1wLBG/FRcI6xcUZXHy/SS7mmXWyadrud0HJHkOc+uw==
+"@upstash/redis@^1.38.2":
+  version "1.38.2"
+  resolved "https://registry.yarnpkg.com/@upstash/redis/-/redis-1.38.2.tgz#c0928250695d5ddef86f8859085ded14c0bbdd8f"
+  integrity sha512-RZ+JaRCVIS+ZTGnjOnDMr+/0aqDxsBb5rV6aW+Pys4SGELwr5lwE3UbLHRCHqMQ5Ulxj0b/CFBHfbmE175Otog==
   dependencies:
     uncrypto "^0.1.3"
 

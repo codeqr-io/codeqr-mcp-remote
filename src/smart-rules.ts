@@ -2,11 +2,21 @@
  * Structural checks for the `rules` argument, run before the call leaves here.
  *
  * The API is still the authority — it validates the same invariants and more
- * (URL parsing, plan gating, attribute values). This exists because of what
- * the caller sees when the API says no: `handleToolCall` returns
- * `error.message`, which for a rejected request is the status line. The reason
- * the API computed never reaches the model, so a wrong `rules` payload comes
- * back as `422 Unprocessable Entity` and the next attempt is a guess.
+ * (URL parsing, plan gating, attribute values).
+ *
+ * What this buys is a round-trip and a readable sentence, not information that
+ * was otherwise lost. An earlier version of this comment claimed the reason
+ * never reached the caller; that was wrong. The API answers
+ * `{error:{code,message,doc_url}}`, and because the SDK's `makeMessage` looks
+ * for `error.message` at the top level and finds it nested, it falls through
+ * to `JSON.stringify(error)` — so the caller already got
+ * `422 {"error":{...,"message":"rules.0: Split weights must add up to 100"}}`.
+ * Verified against the installed SDK, not read off the types.
+ *
+ * So the honest justification is smaller: one fewer failed call, and a message
+ * addressed to whoever has to fix the payload — naming the rule by position,
+ * saying what the weights add up to — instead of a serialized body behind a
+ * status code.
  *
  * Only the invariants a caller can violate while writing plausible JSON are
  * checked here. Anything requiring knowledge this process does not have — is

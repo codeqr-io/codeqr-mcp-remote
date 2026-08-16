@@ -207,7 +207,7 @@ export const SERVER_INSTRUCTIONS = [
   'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
-  'On Business and above, a link can carry smart rules: send traffic to different destinations by device, country, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant across visits.',
+  'On Business and above, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
   'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
 ].join(' ');
 
@@ -217,18 +217,31 @@ export const SERVER_INSTRUCTIONS = [
  * Four of the five invariants cannot be expressed in JSON Schema at all — the
  * weights adding to 100, the url/split exclusivity, the all-or-nothing
  * condition, the unconditional rule having to come last. They live in the
- * descriptions here and are enforced in `validateSmartRules`, so a caller that
- * reads neither still gets a sentence back instead of a bare 422.
+ * descriptions here and are enforced in `validateSmartRules`.
  *
- * `attribute` lists seven values rather than the twelve the API accepts. The
- * SDK type stops at seven (`LinkCreateParams.Rule`), and the tool-params test
- * only compares top-level names, so advertising the other five here would be a
- * claim nothing checks. They come back when the SDK is regenerated.
+ * `attribute` advertises all twelve the API implements
+ * (`SMART_RULE_ATTRIBUTES` in the CodeQR repo, dispatched one by one in
+ * `match-smart-rule.ts:33-56`). An earlier revision listed the SDK's seven,
+ * reasoning that the other five were a claim nothing verified — which
+ * contradicted this same file exposing `split`, a field that SDK type does not
+ * have at all. The SDK is behind on both; the API is what answers the call.
+ *
+ * `value` carries the values each attribute is actually compared against.
+ * `device` is matched against `ctx.ua.os?.name`, so "mobile" — the obvious
+ * guess, and what this file used to suggest — matches nothing, silently:
+ * the API takes any string, the validator below does not inspect it, and the
+ * middleware just returns false. `language` and `referrer` are narrower than
+ * their names too. The UI avoids the trap with a fixed `<select>`; here the
+ * description is the only place it can be said.
  */
 const SMART_RULES_SCHEMA = {
-  type: 'array' as const,
+  // Nullable because clearing is a first-week request — "end the test, send
+  // everyone to the winner" — and the API takes `null` for it
+  // (`rules` is `.nullish()`). Declaring only `array` would have a client that
+  // validates arguments reject the one value that does the job.
+  type: ['array', 'null'] as const,
   description:
-    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split.',
+    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Pass null to remove every rule and send all traffic back to the link url — that is how a test is ended.',
   maxItems: 20,
   items: {
     type: 'object' as const,
@@ -247,6 +260,11 @@ const SMART_RULES_SCHEMA = {
           'utm_campaign',
           'referrer',
           'language',
+          'city',
+          'region',
+          'continent',
+          'utm_term',
+          'utm_content',
         ],
       },
       operator: {
@@ -257,7 +275,7 @@ const SMART_RULES_SCHEMA = {
       value: {
         type: 'string' as const,
         description:
-          'Value to compare against, e.g. "mobile" for device or "BR" for country (1-190 chars)',
+          'Value to compare against, matched whole and case-insensitively — not a substring, prefix or pattern (1-190 chars). The value has to be what the request actually carries, and for three attributes that is narrower than the name suggests: device is the operating system, one of "iOS", "Android", "Windows", "Mac OS", "Linux" (never "mobile" or "desktop"); language is a two-letter code such as "pt" or "en", never a locale like "pt-BR"; referrer is the bare domain, such as "google.com", never a full URL. country and continent are codes ("BR", "SA"), city and region are names ("São Paulo"), and the utm_* attributes match the query parameter of the same name.',
       },
       url: {
         type: 'string' as const,
@@ -652,8 +670,8 @@ export async function handleToolCall(
 
     switch (name) {
       case 'create_link': {
-        // Before the call, not after: a rejected request surfaces as its
-        // status line, so the reason the API computed never reaches the model.
+        // Saves the round-trip, and answers in a sentence rather than the
+        // serialized error body the SDK would surface. See smart-rules.ts.
         const invalid = validateSmartRules(args.rules);
         if (invalid) {
           return { content: [{ type: 'text', text: `Error: ${invalid}` }], isError: true };

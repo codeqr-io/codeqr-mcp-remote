@@ -236,9 +236,19 @@ describe('schema structure', () => {
       const node = schema as {
         description?: string;
         properties?: Record<string, unknown>;
+        required?: string[];
         items?: { properties?: Record<string, unknown> };
       };
       expect(node.description, path).toBeTruthy();
+
+      // The same check the top-level test does, applied at every depth. A
+      // nested `required: ['weigth']` typechecks, passes every other test, and
+      // makes the client reject the call before it is ever sent — the failure
+      // lands nowhere near the typo.
+      for (const key of node.required ?? []) {
+        expect(Object.keys(node.properties ?? {}), `${path}.required.${key}`).toContain(key);
+      }
+
       for (const [key, child] of Object.entries(node.properties ?? {})) {
         walk(child, `${path}.${key}`);
       }

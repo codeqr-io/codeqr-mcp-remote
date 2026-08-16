@@ -9,6 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { TOOLS, SERVER_INSTRUCTIONS } from '../src/routes/mcp.js';
+import { ATTRIBUTE_VALUE_HINTS } from '../src/smart-rules.js';
 
 const schemaOf = (tool: string) =>
   (TOOLS.find((t) => t.name === tool)?.inputSchema.properties as Record<string, any>)?.rules;
@@ -18,8 +19,12 @@ const rule = () => schemaOf('create_link').items.properties;
 /**
  * The twelve of SMART_RULE_ATTRIBUTES in the CodeQR repo, each dispatched by
  * name in match-smart-rule.ts. Duplicated as a literal because the two repos
- * do not share a module: when they drift, this list is the thing that has to
- * be updated deliberately.
+ * do not share a module.
+ *
+ * Known limit, so nobody mistakes this for more than it is: it catches this
+ * repo drifting from the list, and is blind to the CodeQR repo adding a
+ * thirteenth attribute — nothing here would fail. Closing that needs a marker
+ * on the other side; tracked as a separate story.
  */
 const API_ATTRIBUTES = [
   'device',
@@ -48,28 +53,76 @@ describe('attribute inventory', () => {
   });
 });
 
-describe('value description names what the request actually carries', () => {
-  const value = () => rule().value.description as string;
+/**
+ * These assert on values, not on adjectives.
+ *
+ * The previous version checked that the description contained the word
+ * "whole" and the phrase "bare domain" — and passed while that same
+ * description told callers that `region` takes names like "São Paulo".
+ * `region` is `geo.countryRegion`, an ISO 3166-2 code, so every rule written
+ * from that sentence would have saved and never matched. A test that reads
+ * the prose for vocabulary cannot catch a wrong value stated fluently.
+ *
+ * So each case below names one attribute and the value the middleware really
+ * compares, sourced from the CodeQR repo:
+ *
+ *   device    ctx.ua.os?.name                   match-smart-rule.ts:33
+ *   region    geo.countryRegion (ISO 3166-2)    resolve-visitor-geo.ts:16
+ *   language  only i18n/config locales          resolve-visitor-language.ts:13
+ *   referrer  bare domain                       build-match-context.ts:49
+ */
+describe('value hints name what the middleware actually compares', () => {
+  it('covers every attribute the tool offers, with no extras', () => {
+    expect(Object.keys(ATTRIBUTE_VALUE_HINTS).sort()).toEqual([...API_ATTRIBUTES].sort());
+  });
 
-  // device is compared against ctx.ua.os?.name — never a form factor.
-  it('gives the operating-system values for device', () => {
+  it('device is an OS name, and the form-factor guess is called out', () => {
+    const hint = ATTRIBUTE_VALUE_HINTS.device;
     for (const os of ['iOS', 'Android', 'Windows', 'Mac OS', 'Linux']) {
-      expect(value()).toContain(os);
+      expect(hint).toContain(os);
+    }
+    expect(hint).toMatch(/never "mobile"/i);
+  });
+
+  it('region is the ISO 3166-2 code, never the state name', () => {
+    const hint = ATTRIBUTE_VALUE_HINTS.region;
+    expect(hint).toContain('3166-2');
+    expect(hint).toMatch(/never the state name|not the state name/i);
+    // The trap this test exists for: "São Paulo" is right for city and wrong
+    // for region, and both once appeared in the same sentence.
+    expect(hint).not.toContain('São Paulo');
+  });
+
+  it('city is the name, and keeps the example region must not have', () => {
+    expect(ATTRIBUTE_VALUE_HINTS.city).toContain('São Paulo');
+  });
+
+  it('language lists the locales that can match, not "any two-letter code"', () => {
+    // resolveVisitorLanguage returns null for anything outside i18n/config,
+    // so "nl" is a valid ISO code that matches nothing here.
+    const hint = ATTRIBUTE_VALUE_HINTS.language;
+    for (const locale of ['pt', 'en', 'es', 'fr', 'de', 'zh', 'ru', 'it', 'ja', 'ko']) {
+      expect(hint).toMatch(new RegExp(`\\b${locale}\\b`));
+    }
+    expect(hint).not.toMatch(/any two-letter/i);
+  });
+
+  it('referrer is a bare domain', () => {
+    expect(ATTRIBUTE_VALUE_HINTS.referrer).toContain('google.com');
+    expect(ATTRIBUTE_VALUE_HINTS.referrer).toMatch(/never a full URL/i);
+  });
+
+  it('ships every hint in the description the model reads', () => {
+    // The generated sentence is the only copy a client ever sees; if the table
+    // and the schema drift, the table is the one nobody looks at.
+    const description = rule().value.description as string;
+    for (const [attribute, hint] of Object.entries(ATTRIBUTE_VALUE_HINTS)) {
+      expect(description, attribute).toContain(hint);
     }
   });
 
-  it('warns off "mobile", the guess that silently matches nothing', () => {
-    expect(value()).toMatch(/never "mobile"|not "mobile"|never "mobile" or "desktop"/);
-  });
-
-  it('says language is a two-letter code and referrer a bare domain', () => {
-    expect(value()).toMatch(/two-letter/i);
-    expect(value()).toMatch(/bare domain|domain, such as/i);
-  });
-
-  it('says the comparison is whole-value, not a substring', () => {
-    expect(value()).toMatch(/whole/i);
-    expect(value()).toMatch(/substring/i);
+  it('says a wrong value fails silently rather than erroring', () => {
+    expect(rule().value.description).toMatch(/never matches|not an error/i);
   });
 });
 

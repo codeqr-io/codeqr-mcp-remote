@@ -30,6 +30,52 @@ const MAX_RULES = 20;
 const MIN_VARIANTS = 2;
 const MAX_VARIANTS = 4;
 
+/**
+ * What each attribute is compared against, per attribute.
+ *
+ * Data rather than prose because the prose was wrong twice. The first version
+ * of the `value` description suggested "mobile" for device, which matches
+ * nothing; the fix that replaced it said region takes names like "São Paulo",
+ * which also matches nothing — region is `geo.countryRegion`, an ISO 3166-2
+ * code. Both passed a test asserting the description contained the word
+ * "whole", because a `toMatch` on an adjective is satisfied by any sentence
+ * that carries it.
+ *
+ * So the values live here, the description is generated from them, and the
+ * tests assert on this object. A wrong value now fails a test that names the
+ * attribute, instead of hiding inside a paragraph.
+ *
+ * Nothing here is enforced on the way out: `value` is free text at the API and
+ * the sets are open (ua-parser reports os names well beyond the five below).
+ * Rejecting anything would trade a silent non-match for a blocked valid call.
+ */
+export const ATTRIBUTE_VALUE_HINTS: Record<string, string> = {
+  device:
+    'the operating system — "iOS", "Android", "Windows", "Mac OS" or "Linux". Never "mobile" or "desktop": those match nothing.',
+  country: 'a two-letter country code, such as "BR" or "US"',
+  region:
+    'a subdivision code in ISO 3166-2 short form, such as "SP" or "CA" — the code, never the state name',
+  city: 'the city name, such as "São Paulo"',
+  continent: 'a two-letter continent code, such as "SA", "EU" or "NA"',
+  language:
+    'one of the languages the app serves — pt, en, es, fr, de, zh, ru, it, ja, ko. A visitor whose browser asks for any other language matches no language rule at all.',
+  referrer: 'the bare domain, such as "google.com" — never a full URL',
+  utm_source: 'the utm_source value on the incoming link, such as "newsletter"',
+  utm_medium: 'the utm_medium value on the incoming link, such as "email"',
+  utm_campaign: 'the utm_campaign value on the incoming link',
+  utm_term: 'the utm_term value on the incoming link',
+  utm_content: 'the utm_content value on the incoming link',
+};
+
+/** The `value` description, assembled so it cannot drift from the table. */
+export function valueDescription(): string {
+  const perAttribute = Object.entries(ATTRIBUTE_VALUE_HINTS)
+    .map(([attribute, hint]) => `${attribute}: ${hint}`)
+    .join(' | ');
+
+  return `Value to compare against, matched whole and case-insensitively — not a substring, prefix or pattern (1-190 chars). It has to be what the request actually carries, which for several attributes is narrower than the name suggests, and a value outside the set is not an error: the rule is saved and then never matches. Per attribute — ${perAttribute}`;
+}
+
 type Rule = {
   attribute?: unknown;
   operator?: unknown;

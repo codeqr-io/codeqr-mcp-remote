@@ -1,13 +1,18 @@
 /**
  * The MCP does not re-implement the API's validation — the API stays the
  * authority. What it does is turn the five structural invariants into a
- * sentence the caller can act on, because the alternative is a 422 whose body
- * the model never sees: `handleToolCall` surfaces `error.message`, and for a
- * rejected call that reads `422 Unprocessable Entity` with the reason stripped.
+ * sentence addressed to whoever has to fix the payload, and save the failed
+ * round-trip. It does not rescue a lost message: the API's reason does reach
+ * the caller today, serialized inside the SDK's error string. See the comment
+ * in src/smart-rules.ts.
  *
  * Each case here is a mistake an agent actually makes when handed the schema:
  * both destinations at once, a half-written condition, weights that look like
  * percentages but do not add up, an unconditional rule left in the middle.
+ *
+ * Fixtures use values the middleware can actually match, so that nothing here
+ * doubles as an example of how to write a rule. A structurally valid rule that
+ * never matches is the failure this feature is most likely to ship.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -26,7 +31,7 @@ describe('validateSmartRules', () => {
   it('accepts a condition routing to a single url, with a split last', () => {
     expect(
       validateSmartRules([
-        { attribute: 'device', operator: 'equals', value: 'mobile', url: 'https://example.com/m' },
+        { attribute: 'device', operator: 'equals', value: 'iOS', url: 'https://example.com/m' },
         { split: split(30, 70) },
       ]),
     ).toBeNull();
@@ -44,7 +49,7 @@ describe('validateSmartRules', () => {
   });
 
   it('rejects a rule with neither destination', () => {
-    const msg = validateSmartRules([{ attribute: 'device', operator: 'equals', value: 'mobile' }]);
+    const msg = validateSmartRules([{ attribute: 'device', operator: 'equals', value: 'iOS' }]);
     expect(msg).toMatch(/rule 1/i);
     expect(msg).toMatch(/url.*or.*split/i);
   });
@@ -89,7 +94,7 @@ describe('validateSmartRules', () => {
   it('rejects an unconditional rule that is not last, naming the position', () => {
     const msg = validateSmartRules([
       { split: split(50, 50) },
-      { attribute: 'device', operator: 'equals', value: 'mobile', url: 'https://example.com/m' },
+      { attribute: 'device', operator: 'equals', value: 'iOS', url: 'https://example.com/m' },
     ]);
     expect(msg).toMatch(/rule 1/i);
     expect(msg).toMatch(/matches all traffic/i);
@@ -99,7 +104,7 @@ describe('validateSmartRules', () => {
     const many = Array.from({ length: 21 }, () => ({
       attribute: 'device',
       operator: 'equals',
-      value: 'mobile',
+      value: 'iOS',
       url: 'https://example.com/m',
     }));
     expect(validateSmartRules(many)).toMatch(/at most 20/i);

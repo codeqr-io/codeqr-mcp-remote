@@ -12,7 +12,7 @@ import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
 import { SERVER_VERSION } from '../config.js';
-import { validateSmartRules } from '../smart-rules.js';
+import { validateSmartRules, valueDescription } from '../smart-rules.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -226,13 +226,14 @@ export const SERVER_INSTRUCTIONS = [
  * contradicted this same file exposing `split`, a field that SDK type does not
  * have at all. The SDK is behind on both; the API is what answers the call.
  *
- * `value` carries the values each attribute is actually compared against.
- * `device` is matched against `ctx.ua.os?.name`, so "mobile" — the obvious
- * guess, and what this file used to suggest — matches nothing, silently:
- * the API takes any string, the validator below does not inspect it, and the
- * middleware just returns false. `language` and `referrer` are narrower than
- * their names too. The UI avoids the trap with a fixed `<select>`; here the
- * description is the only place it can be said.
+ * `value` is generated from `ATTRIBUTE_VALUE_HINTS`, one entry per attribute,
+ * so the sentence cannot drift from what the middleware compares. Four
+ * attributes are narrower than their names — device (an OS name), region (an
+ * ISO 3166-2 code), language (only the ten locales the app serves) and
+ * referrer (a bare domain) — and a value outside those sets is not an error
+ * anywhere: the API stores it, the validator does not inspect it, and the rule
+ * simply never matches. Writing that as prose got it wrong twice; see the
+ * table's comment.
  */
 const SMART_RULES_SCHEMA = {
   // Nullable because clearing is a first-week request — "end the test, send
@@ -241,7 +242,7 @@ const SMART_RULES_SCHEMA = {
   // validates arguments reject the one value that does the job.
   type: ['array', 'null'] as const,
   description:
-    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Pass null to remove every rule and send all traffic back to the link url — that is how a test is ended.',
+    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Set to null to remove every rule and send all traffic to the link url — on update_link, that is how a running test is ended.',
   maxItems: 20,
   items: {
     type: 'object' as const,
@@ -274,8 +275,7 @@ const SMART_RULES_SCHEMA = {
       },
       value: {
         type: 'string' as const,
-        description:
-          'Value to compare against, matched whole and case-insensitively — not a substring, prefix or pattern (1-190 chars). The value has to be what the request actually carries, and for three attributes that is narrower than the name suggests: device is the operating system, one of "iOS", "Android", "Windows", "Mac OS", "Linux" (never "mobile" or "desktop"); language is a two-letter code such as "pt" or "en", never a locale like "pt-BR"; referrer is the bare domain, such as "google.com", never a full URL. country and continent are codes ("BR", "SA"), city and region are names ("São Paulo"), and the utm_* attributes match the query parameter of the same name.',
+        description: valueDescription(),
       },
       url: {
         type: 'string' as const,

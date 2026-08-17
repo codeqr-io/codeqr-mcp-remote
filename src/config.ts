@@ -28,7 +28,7 @@ import type { Request } from 'express';
  * bump either fails at publish time or ships a mismatched entry.
  * tests/server-json.test.ts fails when the three drift apart.
  */
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.1.1';
 
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),

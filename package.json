@@ -1,6 +1,6 @@
 {
   "name": "@codeqr/mcp-remote",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Remote MCP server for CodeQR with OAuth 2.0 — compatible with ChatGPT, OpenAI Agents, and any MCP client",
   "type": "module",
   "main": "dist/index.js",

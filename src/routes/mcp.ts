@@ -12,6 +12,7 @@ import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
 import { SERVER_VERSION } from '../config.js';
+import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -207,7 +208,7 @@ export const SERVER_INSTRUCTIONS = [
   'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
-  'On Business and above, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
+  'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
   'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
 ].join(' ');
 
@@ -242,7 +243,7 @@ const SMART_RULES_SCHEMA = {
   // validates arguments reject the one value that does the job.
   type: ['array', 'null'] as const,
   description:
-    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; requires a Business plan or above, and on lower plans the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Set to null to remove every rule and send all traffic to the link url — on update_link, that is how a running test is ended.',
+    'Conditional destination routing, evaluated in order — the first matching rule wins (optional; not enabled on every workspace, and where it is not the API rejects the entire call). Each rule either sends traffic to one url, or divides it between 2-4 split variants whose weights add up to 100 — never both. A condition is attribute + operator + value together; a rule with no condition matches all traffic, so it must be the last rule and must split. An A/B test is one rule with no condition and a split. Set to null to remove every rule and send all traffic to the link url — on update_link, that is how a running test is ended.',
   maxItems: 20,
   items: {
     type: 'object' as const,
@@ -541,11 +542,11 @@ export const TOOLS = [
         // the two values this tool deliberately withholds, because they answer
         // 500 as well.
         //
-        // The remaining eight all resolve, but the long ones are gated by plan
-        // and answer 403 rather than data — so the description names the limits
-        // instead of leaving the agent to discover them one rejection at a
-        // time. `get_workspace` returns the plan, which is what makes the
-        // fallback decidable before the call.
+        // The remaining eight all resolve, but the long ones are gated and
+        // answer 403 rather than data. The description says that without
+        // naming the tiers or their ceilings: a client can show this text to
+        // the end user, and the directory reads a tier list as an upsell. The
+        // rewritten 403 says to retry shorter, which is the whole decision.
         //
         // Worth recording: 'all_unfiltered' appears in none of the three plan
         // lists, so it is the one value that walks past the gate on any plan.
@@ -555,7 +556,7 @@ export const TOOLS = [
           type: 'string',
           enum: ['1h', '24h', '7d', '30d', '90d', 'ytd', '1y', 'all'],
           description:
-            'Time window to report over (optional, defaults to 24h). Long windows are limited by plan and return 403 above the limit: free stops at 30d, starter at 90d, pro at 1y, business has no limit.',
+            'Time window to report over (optional, defaults to 24h). Long windows are not available to every workspace and return 403 rather than data; when that happens, a shorter interval returns the report.',
         },
       },
       required: ['event', 'groupBy'],
@@ -758,7 +759,12 @@ export async function handleToolCall(
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // Every tool funnels through here, which is why the rewrite lives at this
+    // one point rather than per tool. The `Error:` prefix is kept for every
+    // class alike, a plan gate included: the two local validation branches
+    // above carry it too, and a text format that varies with the class of
+    // failure is one more thing the next reader has to discover.
+    const { message } = toClientFacingError(error);
     return {
       content: [{ type: 'text', text: `Error: ${message}` }],
       isError: true,

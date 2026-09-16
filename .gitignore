@@ -7,3 +7,4 @@ dist/
 # under the io.codeqr namespace — it never belongs in the repo.
 *.pem
 *.key
+.DS_Store

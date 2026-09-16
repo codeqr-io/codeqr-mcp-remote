@@ -59,14 +59,19 @@ const PLAN_GATES = [
  * Built by `exceededLimitError` in `lib/api/errors.ts`. Every one of these
  * reaches the client as `forbidden`, except tags and folders — see the first
  * test in "a usage limit".
+ *
+ * The four below with **two spaces** after "the" are not typos, and must not be
+ * tidied: the builder interpolates `'monthly'` or `''` into a fixed sentence,
+ * and only links, qrcodes, pages, AI and folders are monthly. Fixtures typed
+ * with one space made a broken pattern look correct.
  */
 const USAGE_LIMITS = [
   'You have reached the monthly limit of 25 links on the Free plan. Please upgrade to add more links.',
   'You have reached the monthly limit of 10 qrcodes on the Free plan. Please upgrade to add more QR Codes.',
-  'You have reached the limit of 5 tags on the Free plan. Please upgrade to add more tags.',
-  'You have reached the limit of 3 domains on the Free plan. Please upgrade to add more domains.',
-  'You have reached the limit of 1000 scans on the Free plan. Please upgrade to add more scans.',
-  'You have reached the limit of 1000 clicks on the Free plan. Please upgrade to add more clicks.',
+  'You have reached the  limit of 5 tags on the Free plan. Please upgrade to add more tags.',
+  'You have reached the  limit of 3 domains on the Free plan. Please upgrade to add more domains.',
+  'You have reached the  limit of 1000 scans on the Free plan. Please upgrade to add more scans.',
+  'You have reached the  limit of 1000 clicks on the Free plan. Please upgrade to add more clicks.',
   'You have reached the monthly limit of 1 folder on the Free plan. Please upgrade to add more folders.',
 ];
 
@@ -174,6 +179,22 @@ describe('a usage limit', () => {
     expect(toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[6])).message).toMatch(
       /\b1 folder\b/,
     );
+    // A non-monthly quota, which is the half the single-space pattern missed.
+    expect(toClientFacingError(apiError(403, 'exceeded_limit', USAGE_LIMITS[2])).message).toMatch(
+      /\b5 tags\b/,
+    );
+  });
+
+  it('reads a non-monthly quota, double space and all', () => {
+    // `exceededLimitError` interpolates '' for anything not billed monthly, so
+    // clicks, scans, domains, tags and users arrive as "the  limit of". The
+    // pattern required exactly one space: tags and users reached the branch by
+    // their code and lost the number, and clicks, scans and domains — all
+    // `forbidden` — did not reach it at all.
+    for (const raw of [USAGE_LIMITS[2], USAGE_LIMITS[3], USAGE_LIMITS[4], USAGE_LIMITS[5]]) {
+      expect(raw, 'fixture must keep the double space the API emits').toContain('the  limit of');
+      expect(toClientFacingError(apiError(403, 'forbidden', raw)).message, raw).toMatch(/\d/);
+    }
   });
 
   it('reports a scan or click ceiling as metering, not as a creation limit', () => {

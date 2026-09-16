@@ -50,8 +50,12 @@ const PLAN_WORDING = /\bupgrade\b|\bplans?\b|\bstarter\b|\bpro\b|\bbusiness\b|\$
  * (`lib/exceeded.ts`, `lib/api/links/usage-checks.ts`,
  * `lib/api/qrcodes/usage-checks.ts`); only tags, folders, users and projects
  * use `exceeded_limit`. Keying on the code left the common case unrecognised.
+ *
+ * The whitespace is `\s+` because the builder interpolates `'monthly'` or `''`
+ * into a fixed sentence, so anything that is not billed monthly — clicks,
+ * scans, domains, tags, users — arrives with two spaces after "the".
  */
-const QUOTA = /reached the (?:monthly )?limit of (\d[\d,]*) (\w+)/i;
+const QUOTA = /reached the\s+(?:monthly\s+)?limit of (\d[\d,]*) (\w+)/i;
 
 /** The `type` `exceededLimitError` interpolates, singular and plural. */
 const ALLOWANCES: Readonly<Record<string, string>> = {

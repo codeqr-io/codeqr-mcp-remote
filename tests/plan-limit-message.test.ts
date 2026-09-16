@@ -266,12 +266,12 @@ describe('no rewritten message', () => {
 });
 
 describe('the help link', () => {
-  it('carries the attribution the campaign expects, and is not the pricing page', () => {
-    expect(HELP_URL).toContain('utm_source=integration');
+  it('points at the pricing page with the UTM combination it reads for context', () => {
+    expect(HELP_URL).toContain('codeqr.io/pricing');
+    expect(HELP_URL).toContain('utm_source=mcp');
     expect(HELP_URL).toContain('utm_medium=mcp');
     expect(HELP_URL).toContain('utm_campaign=codeqr-mcp');
     expect(HELP_URL).toContain('utm_content=limit-reached');
-    expect(HELP_URL).not.toContain('/pricing');
     expect(HELP_URL).not.toMatch(FORBIDDEN);
   });
 });

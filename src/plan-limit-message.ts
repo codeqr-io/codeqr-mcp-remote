@@ -14,15 +14,16 @@
  */
 
 /**
- * Where the fact can be followed up. Deliberately the help centre and not
- * `/pricing`: the point is to explain the limit, not to route to a checkout.
+ * Where the fact can be followed up. `/pricing` renders a context block for
+ * this exact UTM combination — `utm_campaign=codeqr-mcp` + `utm_medium=mcp` +
+ * `utm_content=limit-reached`; it does not read `utm_source` — so this
+ * constant is the single point to change if that combination ever moves.
  *
- * `utm_content` says `limit-reached` rather than naming a plan, because the
- * query string is part of the text the user is shown. This constant is the
- * single point to change when M3.3 makes `/pricing` answer with the variant.
+ * `utm_source` is `mcp`, not `integration`: the app's attribution never
+ * accepts a derived origin like `integration` from a URL, only `mcp` sticks.
  */
 export const HELP_URL =
-  'https://codeqr.io/help?utm_source=integration&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';
+  'https://codeqr.io/pricing?utm_source=mcp&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';
 
 /**
  * Wording that must not reach the client.

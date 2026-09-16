@@ -141,12 +141,15 @@ on `create_link`/`update_link` (plans that include conversion tracking only).
 Smart rules are exposed on `create_link`/`update_link` as `rules`: conditional
 routing by any of the twelve attributes the API implements, and traffic
 splitting across 2-4 destinations, which is how an A/B test is expressed — one
-rule with no condition and a `split`. Business plan and above; below it the API
-rejects the whole call. Four of the field's invariants cannot be stated in JSON
-Schema (weights totalling 100, `url` xor `split`, the all-or-nothing condition,
-the unconditional rule coming last), so they are checked in
-`src/smart-rules.ts` before the request is sent — which saves a round-trip and
-answers in a sentence, rather than the serialized error body the SDK surfaces.
+rule with no condition and a `split`. Where the workspace doesn't have smart
+rules enabled, the server doesn't forward the API's rejection: it reports that
+smart rules aren't enabled on this workspace, with a link to details
+(`src/plan-limit-message.ts` rewrites every plan-gated error this way). Four
+of the field's invariants cannot be stated in JSON Schema (weights totalling
+100, `url` xor `split`, the all-or-nothing condition, the unconditional rule
+coming last), so they are checked in `src/smart-rules.ts` before the request
+is sent — which saves a round-trip and answers in a sentence, rather than the
+serialized error body the SDK surfaces.
 
 The trap worth knowing: `value` is compared whole and case-insensitively
 against what the request carries, which for three attributes is narrower than

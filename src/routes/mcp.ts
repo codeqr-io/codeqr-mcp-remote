@@ -760,12 +760,13 @@ export async function handleToolCall(
     };
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
-    // one point rather than per tool. A plan gate is a state of the workspace
-    // rather than a malfunction, so it drops the `Error:` prefix — `isError`
-    // already tells the client the call did not succeed.
-    const { message, isPlanLimit } = toClientFacingError(error);
+    // one point rather than per tool. The `Error:` prefix is kept for every
+    // class alike, a plan gate included: the two local validation branches
+    // above carry it too, and a text format that varies with the class of
+    // failure is one more thing the next reader has to discover.
+    const { message } = toClientFacingError(error);
     return {
-      content: [{ type: 'text', text: isPlanLimit ? message : `Error: ${message}` }],
+      content: [{ type: 'text', text: `Error: ${message}` }],
       isError: true,
     };
   }

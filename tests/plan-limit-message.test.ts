@@ -302,8 +302,11 @@ describe('the tool call site', () => {
 
     expect(res.isError).toBe(true);
     expect(res.content[0].text).not.toMatch(/upgrade/i);
-    expect(res.content[0].text).not.toMatch(/business/i);
+    expect(res.content[0].text).not.toMatch(/\bbusiness\b/i);
     expect(res.content[0].text).toContain(HELP_URL);
+    // Same prefix as every other failure, including the local smart-rules
+    // validation branches — the format does not vary with the class of error.
+    expect(res.content[0].text).toMatch(/^Error: /);
   });
 
   it('still relays an ordinary failure as it always did', async () => {

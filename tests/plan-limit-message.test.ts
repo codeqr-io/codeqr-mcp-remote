@@ -33,9 +33,7 @@ function apiError(status: number, code: string, message: string) {
   });
 }
 
-/** The link is allowed to carry `utm_content=plan-limit`; the prose is not. */
-const sentence = (message: string) => message.split('Details:')[0];
-
+/** Applied to the whole message, link included — the URL is text the user sees. */
 const FORBIDDEN = /upgrade|\bplans?\b|\bstarter\b|\bpro\b|\bbusiness\b|\$\d/i;
 
 const PLAN_GATES = [
@@ -154,7 +152,7 @@ describe('no rewritten message', () => {
         const { message, isPlanLimit } = toClientFacingError(apiError(403, code, raw));
 
         expect(isPlanLimit, raw).toBe(true);
-        expect(sentence(message), `${code}: ${raw}`).not.toMatch(FORBIDDEN);
+        expect(message, `${code}: ${raw}`).not.toMatch(FORBIDDEN);
         expect(message, raw).toContain(HELP_URL);
       }
     }
@@ -166,8 +164,9 @@ describe('the help link', () => {
     expect(HELP_URL).toContain('utm_source=integration');
     expect(HELP_URL).toContain('utm_medium=mcp');
     expect(HELP_URL).toContain('utm_campaign=codeqr-mcp');
-    expect(HELP_URL).toContain('utm_content=plan-limit');
+    expect(HELP_URL).toContain('utm_content=limit-reached');
     expect(HELP_URL).not.toContain('/pricing');
+    expect(HELP_URL).not.toMatch(FORBIDDEN);
   });
 });
 

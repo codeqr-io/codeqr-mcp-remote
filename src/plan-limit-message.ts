@@ -30,8 +30,14 @@ export const HELP_URL =
  * rewritten even when its `code` is one this module does not recognise,
  * because the cost of a generic sentence is much lower than the cost of
  * leaking the sales copy of a gate added upstream after this file was written.
+ *
+ * Every alternative is bounded, because nothing validates tool arguments
+ * before the SDK call: a value the model invented reaches the API's zod, and
+ * `invalid_enum_value` echoes it back. An unbounded `business` turned
+ * `received 'business_card'` into "not available within this workspace's
+ * current limits" instead of saying the type does not exist.
  */
-const PLAN_WORDING = /upgrade|plans?\b|starter|pro\b|business|\$\d/i;
+const PLAN_WORDING = /\bupgrade\b|\bplans?\b|\bstarter\b|\bpro\b|\bbusiness\b|\$\d/i;
 
 /**
  * The sentence `exceededLimitError` builds in the CodeQR repo: "You have

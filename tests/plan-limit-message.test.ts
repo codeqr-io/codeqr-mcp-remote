@@ -209,6 +209,22 @@ describe('everything that is not a plan gate', () => {
     expect(isPlanLimit).toBe(false);
   });
 
+  it('passes a validation error that happens to contain a plan word', () => {
+    // Nothing validates tool arguments before the SDK call, so a value the
+    // model invented reaches the API's zod and comes back quoted. Unbounded,
+    // `business` matched inside `business_card` and the caller was told the
+    // workspace lacked a capability instead of that the type does not exist.
+    const error = apiError(
+      400,
+      'unprocessable_entity',
+      "Invalid enum value. Expected 'url' | 'vcard' | 'wifi', received 'business_card'",
+    );
+    const { message, isPlanLimit } = toClientFacingError(error);
+
+    expect(message).toBe(error.message);
+    expect(isPlanLimit).toBe(false);
+  });
+
   it('survives something that is not an Error at all', () => {
     expect(toClientFacingError('boom').message).toBe('boom');
   });

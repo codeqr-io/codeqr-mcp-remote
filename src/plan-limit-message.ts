@@ -1,0 +1,171 @@
+/**
+ * Client-facing text for a failed tool call.
+ *
+ * The CodeQR API answers a plan gate with sales copy — "Upgrade to Starter to
+ * use this feature" — and the SDK puts the serialized response body into
+ * `Error.message`, so passing the error straight through puts a plan name, and
+ * sometimes a price, in front of the end user. An app directory that forbids
+ * selling a digital service in-app reads that as an upsell; stating the limit
+ * and linking to a page outside the app is what it allows.
+ *
+ * The API text is left alone. It is the right text in the dashboard, where
+ * changing the plan is something the customer can actually do from where they
+ * are standing, so the translation belongs here and only here.
+ */
+
+/**
+ * Where the fact can be followed up. Deliberately the help centre and not
+ * `/pricing`: the point is to explain the limit, not to route to a checkout.
+ */
+export const HELP_URL =
+  'https://codeqr.io/help?utm_source=integration&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=plan-limit';
+
+/**
+ * Wording that must not reach the client.
+ *
+ * Matching is sufficient on its own: a message that mentions a plan is
+ * rewritten even when its `code` is one this module does not recognise,
+ * because the cost of a generic sentence is much lower than the cost of
+ * leaking the sales copy of a gate added upstream after this file was written.
+ */
+const PLAN_WORDING = /upgrade|plans?\b|starter|pro\b|business|\$\d/i;
+
+/**
+ * Which allowance ran out, read from the message `exceededLimitError` builds
+ * in the CodeQR repo ("You have reached the monthly limit of 25 links on the
+ * Free plan…"). Ordered: the QR code pattern has to be tried before the
+ * generic ones, and `scans`/`clicks` before `links`, or a metering limit is
+ * reported as a creation limit.
+ */
+const ALLOWANCES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/qr ?codes?/i, 'QR codes'],
+  [/\bscans\b/i, 'QR code scans'],
+  [/\bclicks\b/i, 'link clicks'],
+  [/\blinks?\b/i, 'short links'],
+  [/\btags?\b/i, 'tags'],
+  [/\bdomains?\b/i, 'custom domains'],
+  [/\bfolders?\b/i, 'folders'],
+  [/\bpages?\b/i, 'pages'],
+  [/\busers?\b/i, 'workspace members'],
+];
+
+/**
+ * Which capability was refused. Every entry corresponds to a gate one of this
+ * server's tools can actually trip; anything else falls through to the generic
+ * sentence rather than being guessed at.
+ */
+const CAPABILITIES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/smart rules?/i, "Smart rules aren't enabled on this workspace"],
+  [/conversion tracking/i, "Conversion tracking isn't enabled on this workspace"],
+  [/link cloaking/i, "Link cloaking isn't enabled on this workspace"],
+  [/pre-?redirection/i, "Pre-redirection isn't enabled on this workspace"],
+  [/flexible (link|qr)/i, "Flexible links and QR codes aren't enabled on this workspace"],
+  [/root domain/i, "Root-domain redirects aren't enabled on this workspace"],
+  [
+    /premium key|keys of \d+ characters?/i,
+    "Short and premium keys aren't enabled on this workspace",
+  ],
+  [/customer profiles?/i, "Customer profiles aren't enabled on this workspace"],
+  [/\bfolders?\b/i, "Folders aren't enabled on this workspace"],
+  [
+    /\bdomains?\b/i,
+    "This domain isn't available to this workspace. list_domains shows the ones that are",
+  ],
+];
+
+export interface ClientFacingError {
+  message: string;
+  /** True when the text was rewritten because the API refused on plan grounds. */
+  isPlanLimit: boolean;
+}
+
+function property(source: unknown, key: string): unknown {
+  return typeof source === 'object' && source !== null
+    ? (source as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/**
+ * Read structurally rather than with `instanceof APIError`: the SDK ships CJS
+ * and ESM builds, so an error can fail the instance check while carrying
+ * exactly the fields this needs.
+ */
+function rawMessage(error: unknown): string {
+  const message = property(error, 'message');
+  if (typeof message === 'string') return message;
+  return typeof error === 'string' ? error : String(error);
+}
+
+/**
+ * The API's own error code. The SDK exposes the parsed body on `error`, shaped
+ * `{ error: { code, message } }`; the regex covers the case where only the
+ * serialized message survived, since that string contains the same field.
+ */
+function errorCode(error: unknown, raw: string): string | undefined {
+  const code = property(property(error, 'error'), 'error');
+  const value = property(code, 'code');
+  if (typeof value === 'string') return value;
+
+  return /"code"\s*:\s*"([a-z_]+)"/.exec(raw)?.[1];
+}
+
+function firstMatch(table: ReadonlyArray<readonly [RegExp, string]>, raw: string) {
+  return table.find(([pattern]) => pattern.test(raw))?.[1];
+}
+
+function withHelp(sentence: string): string {
+  return `${sentence} Details: ${HELP_URL}`;
+}
+
+/**
+ * Rewrite an error from the CodeQR API into something a tool result can carry.
+ *
+ * Returns the original message unchanged for everything that is not a plan
+ * gate, so an ordinary failure still says what actually went wrong.
+ */
+export function toClientFacingError(error: unknown): ClientFacingError {
+  const raw = rawMessage(error);
+  const code = errorCode(error, raw);
+
+  if (code === 'exceeded_limit') {
+    const allowance = firstMatch(ALLOWANCES, raw);
+    return {
+      message: withHelp(
+        allowance
+          ? `This workspace has reached its limit of ${allowance} for the current billing cycle, so the request could not be completed until that limit resets or changes.`
+          : 'This workspace has reached one of its limits for the current billing cycle, so the request could not be completed until that limit resets or changes.',
+      ),
+      isPlanLimit: true,
+    };
+  }
+
+  // A 429 is about how fast the caller is going, not about what the workspace
+  // has — rewriting it would hide the one error that a retry actually fixes.
+  if (code === 'rate_limit_exceeded') {
+    return { message: raw, isPlanLimit: false };
+  }
+
+  if (!PLAN_WORDING.test(raw)) {
+    return { message: raw, isPlanLimit: false };
+  }
+
+  // The only gate with a way out that costs nothing: ask for less time.
+  if (/analytics for up to/i.test(raw)) {
+    return {
+      message: withHelp(
+        'The requested analytics window is longer than this workspace allows; a shorter interval returns the report.',
+      ),
+      isPlanLimit: true,
+    };
+  }
+
+  const capability = firstMatch(CAPABILITIES, raw);
+  return {
+    message: withHelp(
+      capability
+        ? `${capability}.`
+        : "This action isn't available within this workspace's current limits.",
+    ),
+    isPlanLimit: true,
+  };
+}

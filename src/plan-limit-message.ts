@@ -44,7 +44,7 @@ const PLAN_WORDING = /upgrade|plans?\b|starter|pro\b|business|\$\d/i;
  * `lib/api/qrcodes/usage-checks.ts`); only tags, folders, users and projects
  * use `exceeded_limit`. Keying on the code left the common case unrecognised.
  */
-const QUOTA = /reached the (?:monthly )?limit of \d[\d,]* (\w+)/i;
+const QUOTA = /reached the (?:monthly )?limit of (\d[\d,]*) (\w+)/i;
 
 /** The `type` `exceededLimitError` interpolates, singular and plural. */
 const ALLOWANCES: Readonly<Record<string, string>> = {
@@ -148,11 +148,16 @@ export function toClientFacingError(error: unknown): ClientFacingError {
 
   const quota = QUOTA.exec(raw);
   if (quota || code === 'exceeded_limit') {
-    const allowance = ALLOWANCES[quota?.[1].toLowerCase() ?? ''];
+    // The ceiling is kept. D-007 names three things to withhold — a plan name,
+    // a price, a sell verb — and a number is none of them; it also does not
+    // identify the tier, because a custom limit is granted per workspace and a
+    // trial moves the reading. Without it the answer cannot say how far over
+    // the request was.
+    const allowance = ALLOWANCES[quota?.[2].toLowerCase() ?? ''];
     return {
       message: withHelp(
         allowance
-          ? `This workspace has reached its limit of ${allowance} for the current billing cycle, so the request could not be completed until that limit resets or changes.`
+          ? `This workspace has reached its limit of ${quota?.[1]} ${allowance} for the current billing cycle, so the request could not be completed until that limit resets or changes.`
           : 'This workspace has reached one of its limits for the current billing cycle, so the request could not be completed until that limit resets or changes.',
       ),
       isPlanLimit: true,

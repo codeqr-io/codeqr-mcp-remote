@@ -131,6 +131,18 @@ describe('a usage limit', () => {
     expect(links.isPlanLimit).toBe(true);
   });
 
+  it('quotes the ceiling the API reported', () => {
+    // The M3 gate asks for the number, and D-007 does not forbid it: a custom
+    // limit is a per-workspace grant and a trial moves the reading, so the
+    // ceiling does not name the tier.
+    expect(toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[0])).message).toMatch(
+      /\b25 short links\b/,
+    );
+    expect(toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[6])).message).toMatch(
+      /\b1 folder\b/,
+    );
+  });
+
   it('reports a scan or click ceiling as metering, not as a creation limit', () => {
     const scans = toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[4]));
 

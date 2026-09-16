@@ -18,7 +18,8 @@
  * `/pricing`: the point is to explain the limit, not to route to a checkout.
  *
  * `utm_content` says `limit-reached` rather than naming a plan, because the
- * query string is part of the text the user is shown.
+ * query string is part of the text the user is shown. This constant is the
+ * single point to change when M3.3 makes `/pricing` answer with the variant.
  */
 export const HELP_URL =
   'https://codeqr.io/help?utm_source=integration&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';

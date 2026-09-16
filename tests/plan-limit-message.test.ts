@@ -46,6 +46,13 @@ const PLAN_GATES = [
   'This is a premium key. You can only use this key on a Starter plan. Upgrade to Starter to register this key.',
   'You can only get analytics for up to 30 days on a free plan. Upgrade to Starter, Pro, or Business to get analytics for longer periods.',
   'The domain example.sh is only available on paid plans. Use zipgo.ink or upgrade.',
+  // The free-plan block of `lib/api/links/process-link.ts`, which gates the
+  // fields create_link and update_link advertise. `combineWords` joins with
+  // commas and a final "and", so one, some or all seven can appear.
+  'You can only use custom link preview on a Starter plan. Upgrade to Starter to use these features.',
+  'You can only use password protection and link expiration on a Starter plan. Upgrade to Starter to use these features.',
+  'You can only use custom link preview, password protection, link expiration, iOS targeting, Android targeting, geographic targeting and search engine indexing on a Starter plan. Upgrade to Starter to use these features.',
+  'You can only use the Flexible QR Code feature on a Starter plan and above. Upgrade to Starter to use this feature.',
 ];
 
 /**
@@ -82,6 +89,32 @@ describe('a plan gate', () => {
     expect(smartRules).toMatch(/smart rules/i);
     expect(cloaking).toMatch(/cloaking/i);
     expect(smartRules).not.toEqual(cloaking);
+  });
+
+  it('names each field of the free-plan block, however many were sent', () => {
+    // The gate this server trips most: proxy/title/description/image,
+    // password and expiresAt are all on create_link and update_link, and the
+    // API reports whichever subset was sent in one sentence. Answering
+    // "not available within this workspace's current limits" for these left
+    // the model with no way to know which field to drop.
+    const one = toClientFacingError(apiError(403, 'forbidden', PLAN_GATES[9])).message;
+    const two = toClientFacingError(apiError(403, 'forbidden', PLAN_GATES[10])).message;
+    const all = toClientFacingError(apiError(403, 'forbidden', PLAN_GATES[11])).message;
+
+    expect(one).toMatch(/Custom link preview isn't enabled/);
+    expect(two).toMatch(/Password protection and link expiration aren't enabled/);
+    for (const field of [
+      'custom link preview',
+      'password protection',
+      'link expiration',
+      'iOS targeting',
+      'Android targeting',
+      'geographic targeting',
+      'search engine indexing',
+    ]) {
+      expect(all.toLowerCase(), field).toContain(field.toLowerCase());
+    }
+    expect(all).toMatch(/aren't enabled/);
   });
 
   it('tells the agent what to do about an analytics window', () => {

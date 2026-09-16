@@ -69,28 +69,50 @@ const ALLOWANCES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Which capability was refused. Every entry corresponds to a gate one of this
- * server's tools can actually trip; anything else falls through to the generic
- * sentence rather than being guessed at.
+ * Gates the generic pattern below cannot parse, plus the ones it would parse
+ * into a worse sentence than a curated one ("This key isn't enabled…").
  */
 const CAPABILITIES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/smart rules?/i, "Smart rules aren't enabled on this workspace"],
-  [/conversion tracking/i, "Conversion tracking isn't enabled on this workspace"],
-  [/link cloaking/i, "Link cloaking isn't enabled on this workspace"],
-  [/pre-?redirection/i, "Pre-redirection isn't enabled on this workspace"],
-  [/flexible (link|qr)/i, "Flexible links and QR codes aren't enabled on this workspace"],
-  [/root domain/i, "Root-domain redirects aren't enabled on this workspace"],
+  [/smart rules?/i, "Smart rules aren't enabled on this workspace."],
   [
     /premium key|keys of \d+ characters?/i,
-    "Short and premium keys aren't enabled on this workspace",
+    "Short and premium keys aren't enabled on this workspace.",
   ],
-  [/customer profiles?/i, "Customer profiles aren't enabled on this workspace"],
-  [/\bfolders?\b/i, "Folders aren't enabled on this workspace"],
+  [/root domain/i, "Root-domain redirects aren't enabled on this workspace."],
+  [/customer profiles?/i, "Customer profiles aren't enabled on this workspace."],
+  [/\bfolders?\b/i, "Folders aren't enabled on this workspace."],
+];
+
+/**
+ * Broad enough to mis-attribute a cause — a domain quota reads as a domain
+ * that is out of reach — so it runs after everything that can be read exactly.
+ */
+const BROAD_CAPABILITIES: ReadonlyArray<readonly [RegExp, string]> = [
   [
     /\bdomains?\b/i,
-    "This domain isn't available to this workspace. list_domains shows the ones that are",
+    "This domain isn't available to this workspace. list_domains shows the ones that are.",
   ],
 ];
+
+/**
+ * The shape every free-plan gate in `lib/api/links/process-link.ts` uses: "You
+ * can only use custom link preview, password protection and link expiration on
+ * a Starter plan." That block gates `proxy`, `password`, `expiresAt`, `ios`,
+ * `android`, `geo` and `doIndex` — fields `create_link` and `update_link` put
+ * in front of the model — so it is the gate this server trips most, and one
+ * pattern covers all of it plus the gates worded the same way elsewhere.
+ */
+const CAPABILITY_PHRASE = /you can only use (.+?) on (?:a|the) \w+ plan/i;
+
+function fromPhrase(raw: string): string | undefined {
+  const phrase = CAPABILITY_PHRASE.exec(raw)?.[1];
+  if (!phrase) return undefined;
+
+  // `combineWords` joins that list with commas and a final "and", so a list
+  // has to take the plural verb.
+  const verb = /,| and /.test(phrase) ? "aren't" : "isn't";
+  return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)} ${verb} enabled on this workspace.`;
+}
 
 export interface ClientFacingError {
   message: string;
@@ -184,13 +206,15 @@ export function toClientFacingError(error: unknown): ClientFacingError {
     };
   }
 
-  const capability = firstMatch(CAPABILITIES, raw);
+  const capability =
+    firstMatch(CAPABILITIES, raw) ?? fromPhrase(raw) ?? firstMatch(BROAD_CAPABILITIES, raw);
+
+  // A phrase lifted out of the API's own sentence could carry a tier name with
+  // it; the generic sentence is the safe answer when it does.
+  const named = capability && !PLAN_WORDING.test(capability) ? capability : undefined;
+
   return {
-    message: withHelp(
-      capability
-        ? `${capability}.`
-        : "This action isn't available within this workspace's current limits.",
-    ),
+    message: withHelp(named ?? "This action isn't available within this workspace's current limits."),
     isPlanLimit: true,
   };
 }

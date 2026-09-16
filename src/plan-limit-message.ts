@@ -34,23 +34,39 @@ export const HELP_URL =
 const PLAN_WORDING = /upgrade|plans?\b|starter|pro\b|business|\$\d/i;
 
 /**
- * Which allowance ran out, read from the message `exceededLimitError` builds
- * in the CodeQR repo ("You have reached the monthly limit of 25 links on the
- * Free plan…"). Ordered: the QR code pattern has to be tried before the
- * generic ones, and `scans`/`clicks` before `links`, or a metering limit is
- * reported as a creation limit.
+ * The sentence `exceededLimitError` builds in the CodeQR repo: "You have
+ * reached the monthly limit of 25 links on the Free plan. Please upgrade…".
+ *
+ * Matched on the wording, not on `code`, because the code is not the one its
+ * name implies. Links, QR codes, clicks and scans — every quota this server
+ * can actually reach — are raised as `forbidden` carrying this message
+ * (`lib/exceeded.ts`, `lib/api/links/usage-checks.ts`,
+ * `lib/api/qrcodes/usage-checks.ts`); only tags, folders, users and projects
+ * use `exceeded_limit`. Keying on the code left the common case unrecognised.
  */
-const ALLOWANCES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/qr ?codes?/i, 'QR codes'],
-  [/\bscans\b/i, 'QR code scans'],
-  [/\bclicks\b/i, 'link clicks'],
-  [/\blinks?\b/i, 'short links'],
-  [/\btags?\b/i, 'tags'],
-  [/\bdomains?\b/i, 'custom domains'],
-  [/\bfolders?\b/i, 'folders'],
-  [/\bpages?\b/i, 'pages'],
-  [/\busers?\b/i, 'workspace members'],
-];
+const QUOTA = /reached the (?:monthly )?limit of \d[\d,]* (\w+)/i;
+
+/** The `type` `exceededLimitError` interpolates, singular and plural. */
+const ALLOWANCES: Readonly<Record<string, string>> = {
+  link: 'short link',
+  links: 'short links',
+  qrcode: 'QR code',
+  qrcodes: 'QR codes',
+  click: 'link click',
+  clicks: 'link clicks',
+  scan: 'QR code scan',
+  scans: 'QR code scans',
+  tag: 'tag',
+  tags: 'tags',
+  domain: 'custom domain',
+  domains: 'custom domains',
+  folder: 'folder',
+  folders: 'folders',
+  page: 'page',
+  pages: 'pages',
+  user: 'workspace member',
+  users: 'workspace members',
+};
 
 /**
  * Which capability was refused. Every entry corresponds to a gate one of this
@@ -130,8 +146,9 @@ export function toClientFacingError(error: unknown): ClientFacingError {
   const raw = rawMessage(error);
   const code = errorCode(error, raw);
 
-  if (code === 'exceeded_limit') {
-    const allowance = firstMatch(ALLOWANCES, raw);
+  const quota = QUOTA.exec(raw);
+  if (quota || code === 'exceeded_limit') {
+    const allowance = ALLOWANCES[quota?.[1].toLowerCase() ?? ''];
     return {
       message: withHelp(
         allowance

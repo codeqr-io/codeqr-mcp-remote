@@ -48,11 +48,19 @@ const PLAN_GATES = [
   'The domain example.sh is only available on paid plans. Use zipgo.ink or upgrade.',
 ];
 
+/**
+ * Built by `exceededLimitError` in `lib/api/errors.ts`. Every one of these
+ * reaches the client as `forbidden`, except tags and folders — see the first
+ * test in "a usage limit".
+ */
 const USAGE_LIMITS = [
   'You have reached the monthly limit of 25 links on the Free plan. Please upgrade to add more links.',
   'You have reached the monthly limit of 10 qrcodes on the Free plan. Please upgrade to add more QR Codes.',
   'You have reached the limit of 5 tags on the Free plan. Please upgrade to add more tags.',
   'You have reached the limit of 3 domains on the Free plan. Please upgrade to add more domains.',
+  'You have reached the limit of 1000 scans on the Free plan. Please upgrade to add more scans.',
+  'You have reached the limit of 1000 clicks on the Free plan. Please upgrade to add more clicks.',
+  'You have reached the monthly limit of 1 folder on the Free plan. Please upgrade to add more folders.',
 ];
 
 describe('a plan gate', () => {
@@ -97,9 +105,25 @@ describe('a plan gate', () => {
 });
 
 describe('a usage limit', () => {
+  it('is recognised by its wording, because the code is not exceeded_limit', () => {
+    // The quotas this server can reach — links, QR codes, clicks, scans — are
+    // all raised as `forbidden` (`lib/exceeded.ts`,
+    // `lib/api/links/usage-checks.ts`, `lib/api/qrcodes/usage-checks.ts`).
+    // Only tags, folders, users and projects use `exceeded_limit`, so keying
+    // on the code recognised the four rare cases and missed the four common
+    // ones.
+    for (const raw of USAGE_LIMITS) {
+      const asForbidden = toClientFacingError(apiError(403, 'forbidden', raw));
+      const asExceeded = toClientFacingError(apiError(403, 'exceeded_limit', raw));
+
+      expect(asForbidden.message, raw).toMatch(/billing cycle/);
+      expect(asForbidden.message, raw).toEqual(asExceeded.message);
+    }
+  });
+
   it('says which allowance ran out and that it resets', () => {
-    const links = toClientFacingError(apiError(403, 'exceeded_limit', USAGE_LIMITS[0]));
-    const qrcodes = toClientFacingError(apiError(403, 'exceeded_limit', USAGE_LIMITS[1]));
+    const links = toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[0]));
+    const qrcodes = toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[1]));
 
     expect(links.message).toMatch(/short links/i);
     expect(links.message).toMatch(/resets/i);
@@ -107,11 +131,11 @@ describe('a usage limit', () => {
     expect(links.isPlanLimit).toBe(true);
   });
 
-  it('never quotes the ceiling, which is a plan detail', () => {
-    // "limit of 25 links on the Free plan" names the tier by naming the number.
-    const { message } = toClientFacingError(apiError(403, 'exceeded_limit', USAGE_LIMITS[0]));
+  it('reports a scan or click ceiling as metering, not as a creation limit', () => {
+    const scans = toClientFacingError(apiError(403, 'forbidden', USAGE_LIMITS[4]));
 
-    expect(message).not.toMatch(/\b25\b/);
+    expect(scans.message).toMatch(/QR code scans/);
+    expect(scans.message).not.toMatch(/short links/);
   });
 });
 

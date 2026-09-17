@@ -13,6 +13,7 @@
  * `lib/shared-domains.ts` and `exceededLimitError` in `lib/api/errors.ts`.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { toClientFacingError, HELP_URL } from '../src/plan-limit-message.js';
 import { handleToolCall, SERVER_INSTRUCTIONS, TOOLS } from '../src/routes/mcp.js';
@@ -297,6 +298,18 @@ describe('the text a client renders verbatim', () => {
 
   it('does not name a tier in any tool or parameter description', () => {
     expect(JSON.stringify(TOOLS).match(TIERS)?.[0]).toBeUndefined();
+  });
+
+  /**
+   * The README is read by humans on GitHub and in MCP directories, not by any
+   * client at runtime — but it is prose describing this server's behavior,
+   * and it drifted from `src/plan-limit-message.ts` once already (a human
+   * reviewer caught it, nothing here did). Same rule, same regex, one more
+   * surface.
+   */
+  it('does not name a tier anywhere in the README', () => {
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+    expect(readme.match(TIERS)?.[0]).toBeUndefined();
   });
 });
 

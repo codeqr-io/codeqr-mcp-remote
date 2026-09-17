@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { toClientFacingError, HELP_URL } from '../src/plan-limit-message.js';
+import { toClientFacingError, LIMIT_DETAILS_URL } from '../src/plan-limit-message.js';
 import { handleToolCall, SERVER_INSTRUCTIONS, TOOLS } from '../src/routes/mcp.js';
 
 /**
@@ -84,7 +84,7 @@ describe('a plan gate', () => {
 
     expect(message).not.toMatch(/upgrade/i);
     expect(message).not.toMatch(/starter/i);
-    expect(message).toContain(HELP_URL);
+    expect(message).toContain(LIMIT_DETAILS_URL);
     expect(isPlanLimit).toBe(true);
   });
 
@@ -260,20 +260,20 @@ describe('no rewritten message', () => {
 
         expect(isPlanLimit, raw).toBe(true);
         expect(message, `${code}: ${raw}`).not.toMatch(FORBIDDEN);
-        expect(message, raw).toContain(HELP_URL);
+        expect(message, raw).toContain(LIMIT_DETAILS_URL);
       }
     }
   });
 });
 
-describe('the help link', () => {
-  it('carries the attribution the campaign expects, and is not the pricing page', () => {
-    expect(HELP_URL).toContain('utm_source=integration');
-    expect(HELP_URL).toContain('utm_medium=mcp');
-    expect(HELP_URL).toContain('utm_campaign=codeqr-mcp');
-    expect(HELP_URL).toContain('utm_content=limit-reached');
-    expect(HELP_URL).not.toContain('/pricing');
-    expect(HELP_URL).not.toMatch(FORBIDDEN);
+describe('the limit-details link', () => {
+  it('points at the pricing page with the UTM combination it reads for context', () => {
+    expect(LIMIT_DETAILS_URL).toContain('codeqr.io/pricing');
+    expect(LIMIT_DETAILS_URL).toContain('utm_source=mcp');
+    expect(LIMIT_DETAILS_URL).toContain('utm_medium=mcp');
+    expect(LIMIT_DETAILS_URL).toContain('utm_campaign=codeqr-mcp');
+    expect(LIMIT_DETAILS_URL).toContain('utm_content=limit-reached');
+    expect(LIMIT_DETAILS_URL).not.toMatch(FORBIDDEN);
   });
 });
 
@@ -337,7 +337,7 @@ describe('the tool call site', () => {
     expect(res.isError).toBe(true);
     expect(res.content[0].text).not.toMatch(/upgrade/i);
     expect(res.content[0].text).not.toMatch(/\bbusiness\b/i);
-    expect(res.content[0].text).toContain(HELP_URL);
+    expect(res.content[0].text).toContain(LIMIT_DETAILS_URL);
     // Same prefix as every other failure, including the local smart-rules
     // validation branches — the format does not vary with the class of error.
     expect(res.content[0].text).toMatch(/^Error: /);

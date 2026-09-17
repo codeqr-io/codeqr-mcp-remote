@@ -14,15 +14,16 @@
  */
 
 /**
- * Where the fact can be followed up. Deliberately the help centre and not
- * `/pricing`: the point is to explain the limit, not to route to a checkout.
+ * Where the fact can be followed up. `/pricing` renders a context block for
+ * this exact UTM combination — `utm_campaign=codeqr-mcp` + `utm_medium=mcp` +
+ * `utm_content=limit-reached`; it does not read `utm_source` — so this
+ * constant is the single point to change if that combination ever moves.
  *
- * `utm_content` says `limit-reached` rather than naming a plan, because the
- * query string is part of the text the user is shown. This constant is the
- * single point to change when M3.3 makes `/pricing` answer with the variant.
+ * `utm_source` is `mcp`, not `integration`: the app's attribution never
+ * accepts a derived origin like `integration` from a URL, only `mcp` sticks.
  */
-export const HELP_URL =
-  'https://codeqr.io/help?utm_source=integration&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';
+export const LIMIT_DETAILS_URL =
+  'https://codeqr.io/pricing?utm_source=mcp&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';
 
 /**
  * Wording that must not reach the client.
@@ -165,8 +166,8 @@ function firstMatch(table: ReadonlyArray<readonly [RegExp, string]>, raw: string
   return table.find(([pattern]) => pattern.test(raw))?.[1];
 }
 
-function withHelp(sentence: string): string {
-  return `${sentence} Details: ${HELP_URL}`;
+function withDetails(sentence: string): string {
+  return `${sentence} Details: ${LIMIT_DETAILS_URL}`;
 }
 
 /**
@@ -188,7 +189,7 @@ export function toClientFacingError(error: unknown): ClientFacingError {
     // the request was.
     const allowance = ALLOWANCES[quota?.[2].toLowerCase() ?? ''];
     return {
-      message: withHelp(
+      message: withDetails(
         allowance
           ? `This workspace has reached its limit of ${quota?.[1]} ${allowance} for the current billing cycle, so the request could not be completed until that limit resets or changes.`
           : 'This workspace has reached one of its limits for the current billing cycle, so the request could not be completed until that limit resets or changes.',
@@ -210,7 +211,7 @@ export function toClientFacingError(error: unknown): ClientFacingError {
   // The only gate with a way out that costs nothing: ask for less time.
   if (/analytics for up to/i.test(raw)) {
     return {
-      message: withHelp(
+      message: withDetails(
         'The requested analytics window is longer than this workspace allows; a shorter interval returns the report.',
       ),
       isPlanLimit: true,
@@ -225,7 +226,7 @@ export function toClientFacingError(error: unknown): ClientFacingError {
   const named = capability && !PLAN_WORDING.test(capability) ? capability : undefined;
 
   return {
-    message: withHelp(named ?? "This action isn't available within this workspace's current limits."),
+    message: withDetails(named ?? "This action isn't available within this workspace's current limits."),
     isPlanLimit: true,
   };
 }

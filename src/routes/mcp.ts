@@ -309,6 +309,35 @@ const SMART_RULES_SCHEMA = {
   },
 };
 
+/**
+ * Shared by create_qrcode and update_qrcode, which take the same field.
+ *
+ * Nullable because reverting to the workspace's own branding is a real
+ * request, and the API takes `null` for it (`walletPassSchema` in
+ * lib/zod/schemas/qrcodes.ts of the API repo is nullish on create, nullable
+ * on update).
+ */
+const WALLET_PASS_SCHEMA = {
+  type: ['object', 'null'] as const,
+  description:
+    'Brand the wallet pass saved from this QR code with a name and logo of your own, in place of the workspace ones (optional; omit or set to null for no override, which uses the workspace branding). On update_qrcode: omitting walletPass keeps the value already stored, null clears it, and an object replaces it as a whole — a field left out of the object is cleared, not merged, so send both name and logo together to keep both.',
+  properties: {
+    name: {
+      type: 'string' as const,
+      // Mirrors WALLET_PASS_NAME_MAX_LENGTH in lib/zod/schemas/qrcodes.ts of the API repo.
+      maxLength: 64,
+      description:
+        'Name shown at the top of the pass, in place of the workspace name. 1-64 characters after trimming.',
+    },
+    logo: {
+      type: 'string' as const,
+      // 2 MB mirrors LOGO_MAX_BYTES in lib/zod/schemas/logo-upload.ts of the API repo.
+      description:
+        'https URL of a PNG, JPEG or WebP image, up to 2 MB. The API downloads it and stores its own copy; the response returns the URL of that copy, not the URL sent.',
+    },
+  },
+};
+
 export const TOOLS = [
   {
     name: 'create_link',
@@ -422,7 +451,7 @@ export const TOOLS = [
     title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
-      'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose.',
+      'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -442,6 +471,12 @@ export const TOOLS = [
         level: { type: 'string', enum: ['L', 'M', 'Q', 'H'], description: 'Error correction level (optional)' },
         fgColor: { type: 'string', description: 'Foreground color hex (optional)' },
         bgColor: { type: 'string', description: 'Background color hex (optional)' },
+        title: {
+          type: 'string',
+          description:
+            'Title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code", and printed under the barcode (optional).',
+        },
+        walletPass: WALLET_PASS_SCHEMA,
       },
       // Nothing is required across all nine types. `url` used to be, from when
       // this tool could only make link codes, and leaving it would have made
@@ -483,6 +518,12 @@ export const TOOLS = [
         ...QRCODE_PAYLOAD_PROPERTIES,
         fgColor: { type: 'string', description: 'New foreground color hex (optional)' },
         bgColor: { type: 'string', description: 'New background color hex (optional)' },
+        title: {
+          type: 'string',
+          description:
+            'New title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code", and printed under the barcode (optional).',
+        },
+        walletPass: WALLET_PASS_SCHEMA,
         archived: { type: 'boolean', description: 'Archive status (optional)' },
       },
       required: ['qrcodeId'],

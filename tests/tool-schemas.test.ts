@@ -430,6 +430,31 @@ describe('enums match the values the API accepts', () => {
   });
 });
 
+describe('wallet pass branding', () => {
+  it('declares title and walletPass on both create_qrcode and update_qrcode', () => {
+    for (const name of ['create_qrcode', 'update_qrcode']) {
+      expect(Object.keys(properties(name)), name).toContain('title');
+      expect(Object.keys(properties(name)), name).toContain('walletPass');
+    }
+  });
+
+  it('lets walletPass be cleared with null, like rules', () => {
+    for (const name of ['create_qrcode', 'update_qrcode']) {
+      const walletPass = properties(name).walletPass as { type?: readonly string[] };
+      expect(walletPass.type, name).toEqual(['object', 'null']);
+    }
+  });
+
+  it('bounds the pass name at the length the API stores', () => {
+    for (const name of ['create_qrcode', 'update_qrcode']) {
+      const walletPass = properties(name).walletPass as {
+        properties?: Record<string, { maxLength?: number }>;
+      };
+      expect(walletPass.properties?.name?.maxLength, name).toBe(64);
+    }
+  });
+});
+
 describe('list tools can page', () => {
   it('accepts pagination wherever a workspace can outgrow one page', () => {
     // list_domains and list_tags were previously called with no arguments at

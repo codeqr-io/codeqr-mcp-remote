@@ -81,9 +81,24 @@ const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
 const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
 const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments', 'trackConversion', 'proxy', 'title', 'description', 'image', 'rules'] as const;
 const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
-const CREATE_QRCODE = [...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor'] as const;
+const CREATE_QRCODE = [
+  ...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor', 'title', 'walletPass',
+] as const;
 const LIST_QRCODES = ['page'] as const;
-const UPDATE_QRCODE = [...QRCODE_PAYLOADS, 'fgColor', 'bgColor', 'archived'] as const;
+const UPDATE_QRCODE = [
+  ...QRCODE_PAYLOADS, 'fgColor', 'bgColor', 'archived', 'title', 'walletPass',
+] as const;
+
+// The installed SDK (0.24.1) predates `walletPass`: the field is real on the
+// API — `walletPassSchema` in lib/zod/schemas/qrcodes.ts of the API repo —
+// but absent from Codeqr.QrcodeCreateParams/QrcodeUpdateParams entirely, not
+// just narrower the way `rules.split` is. `asParams` casts, so the body
+// reaches the API untouched either way; this intersection keeps the
+// compile-time check meaningful for every other property instead of failing
+// outright on the one the SDK has not caught up with. The fix, once it does,
+// is regenerating the SDK — not loosening the check.
+type QrcodeCreateParamsWithWalletPass = Codeqr.QrcodeCreateParams & { walletPass?: unknown };
+type QrcodeUpdateParamsWithWalletPass = Codeqr.QrcodeUpdateParams & { walletPass?: unknown };
 // linkId and qrcodeId are genuine filters here, not path identifiers — the
 // analytics endpoint takes them in the query.
 const GET_ANALYTICS = ['event', 'groupBy', 'linkId', 'qrcodeId', 'domain', 'key', 'interval'] as const;
@@ -96,9 +111,9 @@ type _CreateLink = Assert<Accepted<(typeof CREATE_LINK)[number], Codeqr.LinkCrea
 type _ListLinks = Assert<Accepted<(typeof LIST_LINKS)[number], Codeqr.LinkListParams>>;
 type _GetLinkInfo = Assert<Accepted<(typeof GET_LINK_INFO)[number], Codeqr.LinkRetrieveInfoParams>>;
 type _UpdateLink = Assert<Accepted<(typeof UPDATE_LINK)[number], Codeqr.LinkUpdateParams>>;
-type _CreateQrcode = Assert<Accepted<(typeof CREATE_QRCODE)[number], Codeqr.QrcodeCreateParams>>;
+type _CreateQrcode = Assert<Accepted<(typeof CREATE_QRCODE)[number], QrcodeCreateParamsWithWalletPass>>;
 type _ListQrcodes = Assert<Accepted<(typeof LIST_QRCODES)[number], Codeqr.QrcodeListParams>>;
-type _UpdateQrcode = Assert<Accepted<(typeof UPDATE_QRCODE)[number], Codeqr.QrcodeUpdateParams>>;
+type _UpdateQrcode = Assert<Accepted<(typeof UPDATE_QRCODE)[number], QrcodeUpdateParamsWithWalletPass>>;
 type _GetAnalytics = Assert<Accepted<(typeof GET_ANALYTICS)[number], Codeqr.AnalyticsRetrieveParams>>;
 type _ListDomains = Assert<Accepted<(typeof LIST_DOMAINS)[number], Codeqr.DomainListParams>>;
 type _ListTags = Assert<Accepted<(typeof LIST_TAGS)[number], Codeqr.TagListParams>>;

@@ -162,6 +162,18 @@ the name suggests. `device` is the operating system (`iOS`, `Android`,
 `referrer` a bare domain. A wrong value is not an error anywhere: the API
 accepts any string and the rule silently never matches.
 
+`create_qrcode`/`update_qrcode` also take `title` and `walletPass`. `title`
+sets the QR code's display title and is printed in large type on the
+Google/Apple Wallet pass saved from the code (replacing "QR Code") and under
+the barcode. `walletPass` overrides the workspace name and logo on those
+passes with `{ name, logo }` — wallet passes themselves are on plans that
+include them, but storing the field works on any plan. `logo` is an https URL: the
+API downloads it and stores its own copy, so the response returns that
+copy's URL, not the one sent. On `update_qrcode`, an object replaces the
+stored value as a whole (a field left out of it is cleared, not merged);
+`null` clears the override and reverts to the workspace branding, the same
+way `rules: null` ends a running smart-rules test.
+
 ## API Endpoints
 
 | Method | Path | Auth | Description |

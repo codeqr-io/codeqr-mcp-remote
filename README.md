@@ -164,15 +164,23 @@ accepts any string and the rule silently never matches.
 
 `create_qrcode`/`update_qrcode` also take `title` and `walletPass`. `title`
 sets the QR code's display title and is printed in large type on the
-Google/Apple Wallet pass saved from the code (replacing "QR Code") and under
-the barcode. `walletPass` overrides the workspace name and logo on those
-passes with `{ name, logo }` — wallet passes themselves are on plans that
-include them, but storing the field works on any plan. `logo` is an https URL: the
-API downloads it and stores its own copy, so the response returns that
-copy's URL, not the one sent. On `update_qrcode`, an object replaces the
-stored value as a whole (a field left out of it is cleared, not merged);
-`null` clears the override and reverts to the workspace branding, the same
-way `rules: null` ends a running smart-rules test.
+Google/Apple Wallet pass saved from the code (replacing "QR Code"). Within
+`walletPass`, `name` and `logo` override the workspace name and logo shown on
+that pass, and `barcodeText` sets the text shown under the QR code, e.g. a
+member name or card number; when it is absent, CodeQR sends no text for that
+line — the title is never repeated there. Custom branding is only available
+on plans that include it, and never during a trial: a new non-null
+`walletPass` is rejected with 403 on any other plan or during a trial, while
+`null` (clearing it) is always accepted. Outside those plans, or during a
+trial, a stored value is ignored when the pass is built, so passes fall back
+to the workspace name and logo. `logo` is
+an https URL: the API downloads it and stores its own copy, so the response
+returns that copy's URL, not the one sent. `barcodeText` is 1-40 characters
+after trimming. On `update_qrcode`, an object replaces the stored value as a
+whole (a field left out of it is cleared, not merged) — send `name`, `logo`
+and `barcodeText` together to keep all three; `null` clears the override and
+reverts to the workspace branding, the same way `rules: null` ends a running
+smart-rules test.
 
 ## API Endpoints
 

@@ -453,6 +453,16 @@ describe('wallet pass branding', () => {
       expect(walletPass.properties?.name?.maxLength, name).toBe(64);
     }
   });
+
+  it('declares barcodeText on the walletPass object, bounded at the length the API stores', () => {
+    for (const name of ['create_qrcode', 'update_qrcode']) {
+      const walletPass = properties(name).walletPass as {
+        properties?: Record<string, { maxLength?: number }>;
+      };
+      expect(Object.keys(walletPass.properties ?? {}), name).toContain('barcodeText');
+      expect(walletPass.properties?.barcodeText?.maxLength, name).toBe(40);
+    }
+  });
 });
 
 describe('list tools can page', () => {

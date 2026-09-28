@@ -80,6 +80,12 @@ const ALLOWANCES: Readonly<Record<string, string>> = {
   users: 'workspace members',
 };
 
+// The API's 403 for a non-null walletPass. Anchored on the phrase only, not
+// the `walletPass:` prefix, so a zod root error like `walletPass: Unrecognized
+// key(s)…` never lands here. No LIMIT_DETAILS_URL: one of its two causes is a
+// trial, which upgrading does not fix.
+const WALLET_PASS = /custom wallet pass branding/i;
+
 /**
  * Gates the generic pattern below cannot parse, plus the ones it would parse
  * into a worse sentence than a curated one ("This key isn't enabled…").
@@ -214,6 +220,14 @@ export function toClientFacingError(error: unknown): ClientFacingError {
       message: withDetails(
         'The requested analytics window is longer than this workspace allows; a shorter interval returns the report.',
       ),
+      isPlanLimit: true,
+    };
+  }
+
+  if (WALLET_PASS.test(raw)) {
+    return {
+      message:
+        "Custom wallet pass branding (walletPass) isn't enabled on this workspace, and it can't be used during a trial. Omit walletPass, or send null, to use the workspace name and logo.",
       isPlanLimit: true,
     };
   }

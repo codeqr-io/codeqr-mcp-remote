@@ -143,6 +143,49 @@ describe('a plan gate', () => {
   });
 });
 
+describe('the walletPass gate', () => {
+  // Copied verbatim from `lib/api/qrcodes/process-qrcode.ts` in the CodeQR
+  // repo, not invented — the one 403 with two independent causes, only one
+  // of which a plan change fixes.
+  const WALLET_PASS_GATE =
+    'walletPass: custom wallet pass branding requires a plan that includes it and cannot be used during a trial.';
+
+  it('rewrites the exact API message into the curated sentence', () => {
+    const { message, isPlanLimit } = toClientFacingError(
+      apiError(403, 'forbidden', WALLET_PASS_GATE),
+    );
+
+    expect(message).toBe(
+      "Custom wallet pass branding (walletPass) isn't available: it needs a plan that includes it, and it can't be used during a trial. Omit walletPass, or send null, to use the workspace name and logo.",
+    );
+    expect(isPlanLimit).toBe(true);
+  });
+
+  it('names the field and both reasons the request failed', () => {
+    const { message } = toClientFacingError(apiError(403, 'forbidden', WALLET_PASS_GATE));
+
+    expect(message).toMatch(/walletPass/);
+    expect(message).toMatch(/trial/i);
+  });
+
+  it('names no plan and does not point at pricing, since a trial stays rejected either way', () => {
+    const { message } = toClientFacingError(apiError(403, 'forbidden', WALLET_PASS_GATE));
+
+    expect(message).not.toMatch(/starter|pro|business|\$\d/i);
+    expect(message).not.toContain(LIMIT_DETAILS_URL);
+  });
+
+  it('leaves an unrelated 403 mapped the way it always was', () => {
+    // Same code, same shape of gate (a capability, not a quota) — proves the
+    // new branch did not swallow the generic case it sits next to.
+    const { message, isPlanLimit } = toClientFacingError(apiError(403, 'forbidden', PLAN_GATES[1]));
+
+    expect(message).toMatch(/smart rules/i);
+    expect(message).toContain(LIMIT_DETAILS_URL);
+    expect(isPlanLimit).toBe(true);
+  });
+});
+
 describe('a usage limit', () => {
   it('is recognised by its wording, because the code is not exceeded_limit', () => {
     // The quotas this server can reach — links, QR codes, clicks, scans — are

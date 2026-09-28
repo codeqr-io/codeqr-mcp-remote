@@ -320,7 +320,7 @@ const SMART_RULES_SCHEMA = {
 const WALLET_PASS_SCHEMA = {
   type: ['object', 'null'] as const,
   description:
-    'Brand the wallet pass saved from this QR code with a name and logo of your own, in place of the workspace ones (optional; omit or set to null for no override, which uses the workspace branding). On update_qrcode: omitting walletPass keeps the value already stored, null clears it, and an object replaces it as a whole — a field left out of the object is cleared, not merged, so send both name and logo together to keep both.',
+    'Brand the wallet pass saved from this QR code with a name, logo and barcode text of your own, in place of the workspace ones (optional; omit or set to null for no override, which uses the workspace branding). Custom branding is only available on plans that include it, and never during a trial: a new non-null value is rejected with 403 forbidden on any other plan or during a trial, while null (clearing it) is always accepted — a value already stored from before is then ignored, so passes fall back to the workspace name and logo. On update_qrcode: omitting walletPass keeps the value already stored, null clears it, and an object replaces it as a whole — a field left out of the object is cleared, not merged, so send name, logo and barcodeText together to keep all three.',
   properties: {
     name: {
       type: 'string' as const,
@@ -334,6 +334,13 @@ const WALLET_PASS_SCHEMA = {
       // 2 MB mirrors LOGO_MAX_BYTES in lib/zod/schemas/logo-upload.ts of the API repo.
       description:
         'https URL of a PNG, JPEG or WebP image, up to 2 MB. The API downloads it and stores its own copy; the response returns the URL of that copy, not the URL sent.',
+    },
+    barcodeText: {
+      type: 'string' as const,
+      // Mirrors WALLET_PASS_BARCODE_TEXT_MAX_LENGTH in lib/zod/schemas/qrcodes.ts of the API repo.
+      maxLength: 40,
+      description:
+        'Text shown under the QR code on the pass, e.g. a member name or card number. 1-40 characters after trimming. Omit for no text under the code — the title is never repeated there.',
     },
   },
 };
@@ -474,7 +481,7 @@ export const TOOLS = [
         title: {
           type: 'string',
           description:
-            'Title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code", and printed under the barcode (optional).',
+            'Title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code" (optional).',
         },
         walletPass: WALLET_PASS_SCHEMA,
       },
@@ -521,7 +528,7 @@ export const TOOLS = [
         title: {
           type: 'string',
           description:
-            'New title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code", and printed under the barcode (optional).',
+            'New title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code" (optional).',
         },
         walletPass: WALLET_PASS_SCHEMA,
         archived: { type: 'boolean', description: 'Archive status (optional)' },

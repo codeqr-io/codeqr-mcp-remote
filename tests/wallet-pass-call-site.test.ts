@@ -38,6 +38,7 @@ const call = (client: unknown, name: string, args: Record<string, unknown>) =>
 const walletPass = {
   name: 'Central Bakery',
   logo: 'https://res.cloudinary.com/demo/image/upload/v1/qr-logos/a.png',
+  barcodeText: 'Member #4471',
 };
 
 describe('create_qrcode', () => {

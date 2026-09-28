@@ -167,12 +167,13 @@ sets the QR code's display title and is printed in large type on the
 Google/Apple Wallet pass saved from the code (replacing "QR Code"). Within
 `walletPass`, `name` and `logo` override the workspace name and logo shown on
 that pass, and `barcodeText` sets the text shown under the QR code, e.g. a
-member name or card number; when it is absent, no text shows under the code
-— the title is never repeated there. Custom branding is only available on
-plans that include it, and never during a trial: a new non-null `walletPass`
-is rejected with 403 on any other plan or during a trial, while `null`
-(clearing it) is always accepted, and a value already stored from before is
-then ignored, so passes fall back to the workspace name and logo. `logo` is
+member name or card number; when it is absent, CodeQR sends no text for that
+line — the title is never repeated there. Custom branding is only available
+on plans that include it, and never during a trial: a new non-null
+`walletPass` is rejected with 403 on any other plan or during a trial, while
+`null` (clearing it) is always accepted. Outside those plans, or during a
+trial, a stored value is ignored when the pass is built, so passes fall back
+to the workspace name and logo. `logo` is
 an https URL: the API downloads it and stores its own copy, so the response
 returns that copy's URL, not the one sent. `barcodeText` is 1-40 characters
 after trimming. On `update_qrcode`, an object replaces the stored value as a

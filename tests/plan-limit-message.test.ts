@@ -156,7 +156,7 @@ describe('the walletPass gate', () => {
     );
 
     expect(message).toBe(
-      "Custom wallet pass branding (walletPass) isn't available: it needs a plan that includes it, and it can't be used during a trial. Omit walletPass, or send null, to use the workspace name and logo.",
+      "Custom wallet pass branding (walletPass) isn't enabled on this workspace, and it can't be used during a trial. Omit walletPass, or send null, to use the workspace name and logo.",
     );
     expect(isPlanLimit).toBe(true);
   });
@@ -171,8 +171,22 @@ describe('the walletPass gate', () => {
   it('names no plan and does not point at pricing, since a trial stays rejected either way', () => {
     const { message } = toClientFacingError(apiError(403, 'forbidden', WALLET_PASS_GATE));
 
-    expect(message).not.toMatch(/starter|pro|business|\$\d/i);
+    expect(message).not.toMatch(FORBIDDEN);
     expect(message).not.toContain(LIMIT_DETAILS_URL);
+  });
+
+  it('is not tripped by an unrelated walletPass error, such as a zod root error', () => {
+    // The old anchor matched any `walletPass:` prefix. A zod root error on the
+    // same field carries that prefix too, and can independently trip
+    // `PLAN_WORDING` when the invalid value it echoes back happens to be a
+    // plan word — the same trap `received 'business_card'` set for the
+    // capability table, documented above `PLAN_WORDING`.
+    const raw = "walletPass: Invalid enum value. Expected 'square' | 'circle', received 'pro'";
+    const { message } = toClientFacingError(apiError(400, 'unprocessable_entity', raw));
+
+    expect(message).not.toMatch(
+      /isn't enabled on this workspace, and it can't be used during a trial/,
+    );
   });
 
   it('leaves an unrelated 403 mapped the way it always was', () => {

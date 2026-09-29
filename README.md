@@ -15,8 +15,11 @@ Remote MCP server for [CodeQR](https://codeqr.io) with OAuth 2.0 authentication.
 
 1. Client discovers auth endpoints via `/.well-known/oauth-protected-resource`
 2. Client registers dynamically via `POST /oauth/register`
-3. `GET /oauth/authorize` sends the user to CodeQR, where they log in, choose
-   which project to grant access to, and approve — no API key is ever handled
+3. `GET /oauth/authorize` shows this server's consent screen — the app's
+   self-declared name, marked unverified, and the host its redirect URI points
+   at. On approval the user goes to CodeQR, where they log in, choose which
+   project to grant access to, and approve — no API key is ever handled.
+   The callback only completes in the browser that approved.
 4. CodeQR returns them to `GET /oauth/callback`, which trades the code for an
    access + refresh token pair
 5. Client exchanges authorization code for access token (PKCE)
@@ -190,7 +193,8 @@ smart-rules test.
 | GET | `/.well-known/oauth-protected-resource` | No | OAuth resource metadata (RFC 9728) |
 | GET | `/.well-known/oauth-authorization-server` | No | OAuth server metadata (RFC 8414) |
 | POST | `/oauth/register` | No | Dynamic client registration (RFC 7591) |
-| GET | `/oauth/authorize` | No | Redirects the user to CodeQR to approve |
+| GET | `/oauth/authorize` | No | Consent screen: which app, and where access is sent |
+| POST | `/oauth/authorize` | No | Consent decision; on approval redirects to CodeQR |
 | GET | `/oauth/callback` | No | Return leg from CodeQR |
 | POST | `/oauth/token` | No | Token exchange |
 | POST | `/mcp` | Bearer | MCP Streamable HTTP endpoint |

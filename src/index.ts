@@ -10,8 +10,9 @@
  * Flow:
  *   1. Client discovers auth via GET /.well-known/oauth-protected-resource
  *   2. Client registers via POST /oauth/register (Dynamic Client Registration)
- *   3. GET /oauth/authorize sends the user to CodeQR, where they log in, choose
- *      a project, and approve — no API key is ever handled by the user
+ *   3. GET /oauth/authorize shows which app is asking and where access goes;
+ *      on approval the user is sent to CodeQR to log in, choose a project,
+ *      and approve — no API key is ever handled by the user
  *   4. CodeQR returns them to GET /oauth/callback
  *   5. Client exchanges code for token via POST /oauth/token (PKCE)
  *   6. Client sends MCP requests to POST /mcp with Bearer token

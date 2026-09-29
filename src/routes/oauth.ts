@@ -7,31 +7,49 @@
  *
  * Flow:
  * 1. The client registers dynamically via POST /oauth/register
- * 2. The client sends the user to GET /oauth/authorize
- * 3. This server parks the request and redirects to CodeQR, where the user
- *    logs in, picks which project to grant access to, and approves
+ * 2. The client sends the user to GET /oauth/authorize, which shows this
+ *    server's own consent screen: which app is asking, and where the access
+ *    will be sent
+ * 3. On approval (POST /oauth/authorize) this server parks the request and
+ *    redirects to CodeQR, where the user logs in, picks which project to grant
+ *    access to, and approves
  * 4. CodeQR returns the user to GET /oauth/callback, which trades the code for
  *    a CodeQR access + refresh token pair and redirects back to the client
  * 5. The client exchanges its own code for a token via POST /oauth/token
  * 6. The client sends MCP requests with that token; the CodeQR token underneath
  *    is renewed transparently (see middleware/auth.ts)
  *
+ * Step 2 is required by the MCP spec for a proxy that talks to its upstream
+ * with one static client_id: CodeQR's screen only ever names this server, so
+ * without it a user cannot tell a client they started from one a phishing link
+ * registered a minute ago.
+ *
  * The user never sees or handles an API key.
  */
 
 import { Router, type Request, type Response } from 'express';
 import {
+  allowRegistration,
   createAuthorizationCode,
   consumeAuthorizationCode,
   createAccessToken,
   createPendingAuthorization,
   consumePendingAuthorization,
   getRegisteredClient,
+  markClientUsed,
   registerClient,
+  REGISTRATION_WINDOW_SEC,
+  type RegisteredClient,
 } from '../oauth/store.js';
 import { verifyCodeChallenge } from '../oauth/pkce.js';
 import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-oauth.js';
-import { getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
+import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding.js';
+import { sendConsentPage } from '../oauth/consent-page.js';
+import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
+import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
+
+const MAX_CLIENT_NAME_LENGTH = 200;
+const MAX_REDIRECT_URIS = 10;
 
 export function createOAuthRouter(): Router {
   const router = Router();
@@ -39,12 +57,49 @@ export function createOAuthRouter(): Router {
   // ── Dynamic Client Registration (RFC 7591) ─────────────────────────────────
 
   router.post('/register', async (req: Request, res: Response) => {
-    const { client_name, redirect_uris } = req.body;
+    if (!(await allowRegistration(clientAddress(req)))) {
+      res
+        .status(429)
+        .set('Retry-After', String(REGISTRATION_WINDOW_SEC))
+        .json({
+          error: 'temporarily_unavailable',
+          error_description: 'Too many client registrations from this address. Try again later.',
+        });
+      return;
+    }
+
+    const { client_name, redirect_uris } = req.body ?? {};
 
     if (!client_name || !redirect_uris || !Array.isArray(redirect_uris)) {
       res.status(400).json({
         error: 'invalid_request',
         error_description: 'client_name and redirect_uris are required',
+      });
+      return;
+    }
+
+    if (
+      typeof client_name !== 'string' ||
+      client_name.trim() === '' ||
+      client_name.length > MAX_CLIENT_NAME_LENGTH
+    ) {
+      res.status(400).json({
+        error: 'invalid_client_metadata',
+        error_description: `client_name must be a non-empty string of at most ${MAX_CLIENT_NAME_LENGTH} characters`,
+      });
+      return;
+    }
+
+    if (
+      redirect_uris.length === 0 ||
+      redirect_uris.length > MAX_REDIRECT_URIS ||
+      !redirect_uris.every(isAllowedRedirectUri)
+    ) {
+      res.status(400).json({
+        error: 'invalid_redirect_uri',
+        error_description:
+          'Each redirect URI must use HTTPS, loopback HTTP (localhost, 127.0.0.1 or [::1]), ' +
+          `or an app-specific scheme, carry no fragment, and there can be at most ${MAX_REDIRECT_URIS}`,
       });
       return;
     }
@@ -67,70 +122,53 @@ export function createOAuthRouter(): Router {
   // ── Authorization Endpoint ─────────────────────────────────────────────────
 
   router.get('/authorize', async (req: Request, res: Response) => {
-    const {
-      client_id,
-      redirect_uri,
-      response_type,
-      code_challenge,
-      code_challenge_method,
-      state,
-      scope,
-    } = req.query as Record<string, string>;
+    const request = await checkAuthorizeRequest(req.query, res);
+    if (!request) return;
 
-    if (!client_id || !redirect_uri) {
-      res.status(400).json({
+    const binding = issueBinding(req, res);
+
+    sendConsentPage(res, {
+      clientName: request.client.clientName,
+      redirectUri: request.redirectUri,
+      scopes: CODEQR_OAUTH_SCOPES,
+      fields: {
+        client_id: request.client.clientId,
+        redirect_uri: request.redirectUri,
+        response_type: 'code',
+        code_challenge: request.codeChallenge,
+        code_challenge_method: request.codeChallengeMethod,
+        state: request.clientState,
+        scope: request.scope,
+        csrf_token: binding,
+      },
+    });
+  });
+
+  router.post('/authorize', async (req: Request, res: Response) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    // Checked before anything else: without it a page on another site could
+    // post an approval from the user's browser for a client they never saw.
+    const binding = readBinding(req);
+    if (!binding || !sameBinding(binding, param(body.csrf_token))) {
+      res.status(403).json({
         error: 'invalid_request',
-        error_description: 'client_id and redirect_uri are required',
+        error_description: 'This approval could not be verified. Start the connection again from your app.',
       });
       return;
     }
 
-    // The redirect target is checked against what the client registered before
-    // anything is echoed to it. Skipping this would let an attacker who knows a
-    // client_id name their own redirect_uri and collect the authorization code.
-    const client = await getRegisteredClient(client_id);
+    const request = await checkAuthorizeRequest(body, res);
+    if (!request) return;
 
-    if (!client) {
-      res.status(400).json({
-        error: 'invalid_client',
-        error_description: 'Unknown client_id. Register via POST /oauth/register first.',
-      });
-      return;
-    }
-
-    if (!client.redirectUris.includes(redirect_uri)) {
-      res.status(400).json({
-        error: 'invalid_request',
-        error_description: 'redirect_uri does not match any URI registered for this client',
-      });
-      return;
-    }
-
-    // From here the redirect_uri is trusted, so failures are reported to the
-    // client as OAuth errors rather than as an HTTP page the user is stuck on.
-    if (response_type !== 'code') {
-      redirectWithError(res, redirect_uri, 'unsupported_response_type', 'Only "code" is supported', state);
-      return;
-    }
-
-    if (!code_challenge || code_challenge_method !== 'S256') {
+    if (param(body.decision) !== 'approve') {
       redirectWithError(
         res,
-        redirect_uri,
-        'invalid_request',
-        'PKCE with S256 code_challenge_method is required',
-        state,
-      );
-      return;
-    }
-
-    if (!hasCodeQROAuthCredentials()) {
-      redirectWithError(
-        res,
-        redirect_uri,
-        'server_error',
-        'This MCP server is not configured to authorize against CodeQR',
-        state,
+        request.redirectUri,
+        'access_denied',
+        'The user declined to connect this app',
+        request.clientState,
+        303,
       );
       return;
     }
@@ -139,16 +177,17 @@ export function createOAuthRouter(): Router {
     // inside this record instead of over to CodeQR, so a callback carrying
     // someone else's state cannot be replayed into this session.
     const brokerState = await createPendingAuthorization({
-      clientId: client_id,
-      redirectUri: redirect_uri,
-      codeChallenge: code_challenge,
-      codeChallengeMethod: code_challenge_method,
-      clientState: state,
-      scope: scope || 'mcp:tools',
+      clientId: request.client.clientId,
+      redirectUri: request.redirectUri,
+      codeChallenge: request.codeChallenge,
+      codeChallengeMethod: request.codeChallengeMethod,
+      clientState: request.clientState,
+      scope: request.scope,
+      browserBinding: issueBinding(req, res),
     });
 
     res.redirect(
-      302,
+      303,
       buildAuthorizeUrl({ redirectUri: getCallbackUrl(req), state: brokerState }),
     );
   });
@@ -174,6 +213,18 @@ export function createOAuthRouter(): Router {
       res.status(400).json({
         error: 'invalid_request',
         error_description: 'This authorization request expired or was already used. Start again.',
+      });
+      return;
+    }
+
+    // A callback landing in a browser other than the one that approved on this
+    // server's consent screen is a CodeQR link someone was handed, so it ends
+    // here — no code, and nothing sent to the redirect_uri.
+    if (!sameBinding(readBinding(req), pending.browserBinding)) {
+      res.status(400).json({
+        error: 'invalid_request',
+        error_description:
+          'This authorization was not started in this browser. Start the connection again from your app.',
       });
       return;
     }
@@ -213,6 +264,8 @@ export function createOAuthRouter(): Router {
       redirectWithError(res, pending.redirectUri, 'server_error', message, pending.clientState);
       return;
     }
+
+    await markClientUsed(pending.clientId);
 
     const authCode = await createAuthorizationCode({
       clientId: pending.clientId,
@@ -300,6 +353,129 @@ export function createOAuthRouter(): Router {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+interface AuthorizeRequest {
+  client: RegisteredClient;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  clientState?: string;
+  scope: string;
+}
+
+/**
+ * Validation shared by showing the consent screen and acting on it, so the
+ * form cannot be resubmitted with values the screen never displayed.
+ *
+ * Sends the error response itself and returns null when the request stops here.
+ */
+async function checkAuthorizeRequest(
+  input: Record<string, unknown>,
+  res: Response,
+): Promise<AuthorizeRequest | null> {
+  const clientId = param(input.client_id);
+  const redirectUri = param(input.redirect_uri);
+  const responseType = param(input.response_type);
+  const codeChallenge = param(input.code_challenge);
+  const codeChallengeMethod = param(input.code_challenge_method);
+  const clientState = param(input.state);
+  const scope = param(input.scope);
+
+  if (!clientId || !redirectUri) {
+    res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'client_id and redirect_uri are required',
+    });
+    return null;
+  }
+
+  // The redirect target is checked against what the client registered before
+  // anything is echoed to it. Skipping this would let an attacker who knows a
+  // client_id name their own redirect_uri and collect the authorization code.
+  const client = await getRegisteredClient(clientId);
+
+  if (!client) {
+    res.status(400).json({
+      error: 'invalid_client',
+      error_description: 'Unknown client_id. Register via POST /oauth/register first.',
+    });
+    return null;
+  }
+
+  if (!client.redirectUris.includes(redirectUri)) {
+    res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'redirect_uri does not match any URI registered for this client',
+    });
+    return null;
+  }
+
+  // Re-checked here for clients registered before /register validated URIs.
+  if (!isAllowedRedirectUri(redirectUri)) {
+    res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'redirect_uri is not an allowed redirect target',
+    });
+    return null;
+  }
+
+  // From here the redirect_uri is trusted, so failures are reported to the
+  // client as OAuth errors rather than as an HTTP page the user is stuck on.
+  if (responseType !== 'code') {
+    redirectWithError(res, redirectUri, 'unsupported_response_type', 'Only "code" is supported', clientState);
+    return null;
+  }
+
+  if (!codeChallenge || codeChallengeMethod !== 'S256') {
+    redirectWithError(
+      res,
+      redirectUri,
+      'invalid_request',
+      'PKCE with S256 code_challenge_method is required',
+      clientState,
+    );
+    return null;
+  }
+
+  if (!hasCodeQROAuthCredentials()) {
+    redirectWithError(
+      res,
+      redirectUri,
+      'server_error',
+      'This MCP server is not configured to authorize against CodeQR',
+      clientState,
+    );
+    return null;
+  }
+
+  return {
+    client,
+    redirectUri,
+    codeChallenge,
+    codeChallengeMethod,
+    clientState,
+    scope: scope || 'mcp:tools',
+  };
+}
+
+function param(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * The caller's IP for rate limiting. Vercel overwrites both headers with the
+ * real client address; behind a proxy that forwards a client-supplied
+ * X-Forwarded-For instead, the limit can be sidestepped.
+ */
+function clientAddress(req: Request): string {
+  const realIp = req.headers['x-real-ip'];
+  if (typeof realIp === 'string' && realIp) return realIp;
+
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded) return forwarded.split(',')[0]!.trim();
+
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
 /**
  * Hand an OAuth error back to the client at its own redirect_uri.
  *
@@ -312,11 +488,12 @@ function redirectWithError(
   error: string,
   description: string,
   state?: string,
+  status: 302 | 303 = 302,
 ): void {
   const url = new URL(redirectUri);
   url.searchParams.set('error', error);
   url.searchParams.set('error_description', description);
   if (state) url.searchParams.set('state', state);
 
-  res.redirect(302, url.toString());
+  res.redirect(status, url.toString());
 }

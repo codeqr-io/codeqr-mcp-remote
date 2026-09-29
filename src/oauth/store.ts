@@ -74,6 +74,8 @@ export interface PendingAuthorization {
   codeChallengeMethod: string;
   clientState?: string;
   scope: string;
+  /** The consent cookie of the browser that approved; see browser-binding.ts. */
+  browserBinding: string;
   expiresAt: number;
 }
 
@@ -103,6 +105,7 @@ const KEY_ACCESS_TOKEN = 'codeqr:as:mcp:oauth:token:';
 const KEY_CLIENT = 'codeqr:as:mcp:oauth:client:';
 const KEY_PENDING = 'codeqr:as:mcp:oauth:pending:';
 const KEY_REFRESH_LOCK = 'codeqr:as:mcp:oauth:refresh-lock:';
+const KEY_REGISTRATION_RATE = 'codeqr:as:mcp:oauth:register-rate:';
 
 // Authorization codes expire after 10 minutes (seconds for Redis EX).
 const AUTH_CODE_TTL_SEC = 10 * 60;
@@ -110,7 +113,17 @@ const AUTH_CODE_TTL_SEC = 10 * 60;
 // How long the user has to finish approving on CodeQR before the handoff is
 // dropped. Generous because this window includes logging in and, for a new
 // visitor, creating a project.
-const PENDING_TTL_SEC = 30 * 60;
+export const PENDING_TTL_SEC = 30 * 60;
+
+// A registration nobody ever completes an authorization with is dropped after
+// this long, which bounds what anonymous registration can pile up in Redis.
+// One that is used is kept indefinitely (see markClientUsed).
+const UNUSED_CLIENT_TTL_SEC = 30 * 24 * 60 * 60;
+
+// Generous on purpose: ChatGPT and Claude register from their own servers, so
+// one address can stand for many users connecting at the same time.
+export const REGISTRATION_LIMIT = 30;
+export const REGISTRATION_WINDOW_SEC = 10 * 60;
 
 // Must exceed TOKEN_REQUEST_TIMEOUT_MS (20s in oauth/codeqr-oauth.ts), which is
 // the longest a holder can possibly take. If the lock could expire while a
@@ -125,6 +138,8 @@ const accessTokens = new Map<string, AccessToken>();
 const registeredClients = new Map<string, RegisteredClient>();
 const pendingAuthorizations = new Map<string, PendingAuthorization>();
 const refreshLocks = new Map<string, number>();
+const unusedClientDeadlines = new Map<string, number>();
+const registrationCounts = new Map<string, { window: number; count: number }>();
 
 // TTL cleanup for in-memory mode (every 5 minutes).
 // unref'd so this timer never by itself keeps the process alive.
@@ -141,6 +156,16 @@ const cleanupTimer = setInterval(() => {
   }
   for (const [key, expiresAt] of refreshLocks) {
     if (expiresAt < now) refreshLocks.delete(key);
+  }
+  for (const [clientId, deadline] of unusedClientDeadlines) {
+    if (deadline < now) {
+      unusedClientDeadlines.delete(clientId);
+      registeredClients.delete(clientId);
+    }
+  }
+  const window = registrationWindow(now);
+  for (const [source, entry] of registrationCounts) {
+    if (entry.window !== window) registrationCounts.delete(source);
   }
 }, 5 * 60 * 1000);
 
@@ -295,7 +320,6 @@ export async function validateAccessToken(token: string): Promise<AccessToken | 
 
 // ── Dynamic Client Registration ────────────────────────────────────────────────
 
-// Registered OAuth clients are long-lived; no TTL in Redis (manual cleanup if needed).
 export async function registerClient(params: {
   clientName: string;
   redirectUris: string[];
@@ -309,9 +333,12 @@ export async function registerClient(params: {
 
   const redis = getRedis();
   if (redis) {
-    await redis.set(`${KEY_CLIENT}${clientId}`, JSON.stringify(client));
+    await redis.set(`${KEY_CLIENT}${clientId}`, JSON.stringify(client), {
+      ex: UNUSED_CLIENT_TTL_SEC,
+    });
   } else {
     registeredClients.set(clientId, client);
+    unusedClientDeadlines.set(clientId, Date.now() + UNUSED_CLIENT_TTL_SEC * 1000);
   }
 
   return client;
@@ -325,7 +352,58 @@ export async function getRegisteredClient(clientId: string): Promise<RegisteredC
     return decode<RegisteredClient>(raw);
   }
 
+  const deadline = unusedClientDeadlines.get(clientId);
+  if (deadline !== undefined && deadline < Date.now()) {
+    unusedClientDeadlines.delete(clientId);
+    registeredClients.delete(clientId);
+    return null;
+  }
+
   return registeredClients.get(clientId) ?? null;
+}
+
+/**
+ * Keep a client for good once a user has completed an authorization with it.
+ *
+ * MCP clients cache their client_id and reuse it when the 120-day token runs
+ * out, so a used registration must not expire underneath them.
+ */
+export async function markClientUsed(clientId: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    await redis.persist(`${KEY_CLIENT}${clientId}`);
+    return;
+  }
+
+  unusedClientDeadlines.delete(clientId);
+}
+
+// ── Registration rate limit ───────────────────────────────────────────────────
+
+function registrationWindow(now: number): number {
+  return Math.floor(now / (REGISTRATION_WINDOW_SEC * 1000));
+}
+
+/**
+ * Count one registration attempt from `source` (a client IP) and say whether
+ * it is still within REGISTRATION_LIMIT for the current fixed window.
+ */
+export async function allowRegistration(source: string): Promise<boolean> {
+  const window = registrationWindow(Date.now());
+
+  const redis = getRedis();
+  if (redis) {
+    // The window number is part of the key, so a key whose EXPIRE was lost is
+    // never read again rather than blocking this source for good.
+    const key = `${KEY_REGISTRATION_RATE}${source}:${window}`;
+    const [count] = await redis.pipeline().incr(key).expire(key, REGISTRATION_WINDOW_SEC).exec();
+    return count <= REGISTRATION_LIMIT;
+  }
+
+  const entry = registrationCounts.get(source);
+  const count = entry && entry.window === window ? entry.count + 1 : 1;
+  registrationCounts.set(source, { window, count });
+  return count <= REGISTRATION_LIMIT;
 }
 
 // ── Pending authorizations (handoff to CodeQR) ────────────────────────────────
@@ -337,6 +415,7 @@ export async function createPendingAuthorization(params: {
   codeChallengeMethod: string;
   clientState?: string;
   scope: string;
+  browserBinding: string;
 }): Promise<string> {
   const state = nanoid(48);
   const entry: PendingAuthorization = {

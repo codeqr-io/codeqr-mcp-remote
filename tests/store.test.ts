@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireRefreshLock,
+  allowRegistration,
   consumePendingAuthorization,
   createAccessToken,
   createPendingAuthorization,
+  getRegisteredClient,
+  markClientUsed,
+  registerClient,
+  REGISTRATION_LIMIT,
+  REGISTRATION_WINDOW_SEC,
   releaseRefreshLock,
   updateAccessTokenCredentials,
   validateAccessToken,
@@ -18,6 +24,7 @@ const pendingFixture = {
   codeChallengeMethod: 'S256',
   clientState: 'client-state',
   scope: 'mcp:tools',
+  browserBinding: 'b'.repeat(32),
 };
 
 describe('pending authorizations', () => {
@@ -122,5 +129,58 @@ describe('updateAccessTokenCredentials', () => {
         expiresAt: Date.now() + MINUTE,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('registered clients', () => {
+  const DAY = 24 * 60 * MINUTE;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('drops a registration nobody ever authorized with', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const client = await registerClient({ clientName: 'Unused', redirectUris: ['https://a.test/cb'] });
+
+    vi.setSystemTime(Date.now() + 31 * DAY);
+
+    await expect(getRegisteredClient(client.clientId)).resolves.toBeNull();
+  });
+
+  it('keeps a registration for good once an authorization completed with it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const client = await registerClient({ clientName: 'Used', redirectUris: ['https://a.test/cb'] });
+
+    await markClientUsed(client.clientId);
+    // Past the unused TTL and past the 120-day token, when clients re-authorize
+    // with the client_id they cached.
+    vi.setSystemTime(Date.now() + 200 * DAY);
+
+    await expect(getRegisteredClient(client.clientId)).resolves.toMatchObject({ clientName: 'Used' });
+  });
+});
+
+describe('registration rate limit', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('admits REGISTRATION_LIMIT attempts per source and window', async () => {
+    const results = [];
+    for (let i = 0; i <= REGISTRATION_LIMIT; i++) results.push(await allowRegistration('10.0.0.1'));
+
+    expect(results.slice(0, REGISTRATION_LIMIT).every(Boolean)).toBe(true);
+    expect(results[REGISTRATION_LIMIT]).toBe(false);
+    await expect(allowRegistration('10.0.0.2')).resolves.toBe(true);
+  });
+
+  it('starts over in the next window', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    for (let i = 0; i <= REGISTRATION_LIMIT; i++) await allowRegistration('10.0.0.3');
+
+    vi.setSystemTime(Date.now() + REGISTRATION_WINDOW_SEC * 1000);
+
+    await expect(allowRegistration('10.0.0.3')).resolves.toBe(true);
   });
 });

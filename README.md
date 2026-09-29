@@ -16,8 +16,9 @@ Remote MCP server for [CodeQR](https://codeqr.io) with OAuth 2.0 authentication.
 1. Client discovers auth endpoints via `/.well-known/oauth-protected-resource`
 2. Client registers dynamically via `POST /oauth/register`
 3. `GET /oauth/authorize` shows this server's consent screen — the app's
-   self-declared name, marked unverified, and the host its redirect URI points
-   at. On approval the user goes to CodeQR, where they log in, choose which
+   self-declared name, marked unverified unless its exact redirect URI is
+   listed in `src/oauth/verified-clients.ts`, and the host that redirect URI
+   points at. On approval the user goes to CodeQR, where they log in, choose which
    project to grant access to, and approve — no API key is ever handled.
    The callback only completes in the browser that approved.
 4. CodeQR returns them to `GET /oauth/callback`, which trades the code for an

@@ -4,7 +4,8 @@
  * CodeQR's own screen names the app it knows about — this server, "CodeQR
  * MCP" — never the MCP client that registered here, so it cannot tell the user
  * where the access will end up. This page does: the client's self-declared
- * name, flagged as unverified, and the host its redirect_uri points at.
+ * name, flagged as unverified unless verified-clients.ts vouches for its
+ * redirect_uri, and the host that redirect_uri points at.
  *
  * The layout, colors and wording follow CodeQR's authorize screen
  * (app/app.codeqr.io/(auth)/oauth/authorize in the main repo), so the two
@@ -13,6 +14,7 @@
 
 import type { Response } from 'express';
 import { CODEQR_LOGO_DATA_URI } from './codeqr-logo.js';
+import { findVerifiedClient } from './verified-clients.js';
 
 // Same wording as OAUTH_SCOPE_DESCRIPTIONS in the main repo, so both screens
 // describe the access the same way.
@@ -37,8 +39,11 @@ const ARROW_LEFT_RIGHT_ICON =
 const CHECK_ICON =
   '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
+const VERIFIED_ICON =
+  '<svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/></svg>';
+
 const WARNING_ICON =
-  '<svg class="warning" viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="9" r="7.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><line x1="9" x2="9" y1="5.431" y2="9.569" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><path d="M9,13.417c-.552,0-1-.449-1-1s.448-1,1-1,1,.449,1,1-.448,1-1,1Z" stroke="none"/></g></svg>';
+  '<svg class="badge-icon" viewBox="0 0 18 18" aria-hidden="true"><g fill="currentColor"><circle cx="9" cy="9" r="7.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><line x1="9" x2="9" y1="5.431" y2="9.569" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/><path d="M9,13.417c-.552,0-1-.449-1-1s.448-1,1-1,1,.449,1,1-.448,1-1,1Z" stroke="none"/></g></svg>';
 
 export interface ConsentPageParams {
   clientName: string;
@@ -66,10 +71,19 @@ export function sendConsentPage(res: Response, params: ConsentPageParams): void 
 }
 
 export function renderConsentPage({ clientName, redirectUri, scopes, fields }: ConsentPageParams): string {
-  const displayName = clientName.replace(INVISIBLE_FORMATTING, '').trim();
+  const verified = findVerifiedClient(redirectUri);
+  const displayName = verified?.name ?? clientName.replace(INVISIBLE_FORMATTING, '').trim();
   const name = escapeHtml(displayName);
   const initial = escapeHtml((Array.from(displayName)[0] ?? '?').toUpperCase());
   const destination = describeDestination(redirectUri);
+
+  const clientMark = verified?.logo
+    ? `<img class="client-logo" src="${escapeHtml(verified.logo)}" alt="${name}">`
+    : `<div class="avatar" aria-hidden="true">${initial}</div>`;
+
+  const trust = verified
+    ? `<div class="badge verified">${VERIFIED_ICON}<span>Verified by CodeQR.io</span></div>`
+    : `<div class="badge">${WARNING_ICON}<span>CodeQR.io has not verified this application. Continue only if you started this connection yourself; if someone sent you this link, refuse.</span></div>`;
 
   const hiddenInputs = Object.entries(fields)
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
@@ -102,11 +116,13 @@ export function renderConsentPage({ clientName, redirectUri, scopes, fields }: C
     .logos { display: flex; align-items: center; gap: .75rem; }
     .avatar { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border: 1px solid #e5e7eb; border-radius: 9999px; background: #f3f4f6; color: #4b5563; font-size: 1.25rem; font-weight: 600; }
     .logo { display: block; width: 48px; height: 48px; }
+    .client-logo { display: block; width: 48px; height: 48px; border: 1px solid #e5e7eb; border-radius: 9999px; }
     .arrows { width: 20px; height: 20px; color: #6b7280; }
     .request { margin: 0; overflow-wrap: anywhere; }
     .request b { font-weight: 700; }
     .badge { display: flex; align-items: center; gap: .5rem; padding: .5rem; border-radius: .375rem; background: #fefce8; color: #a16207; font-size: .875rem; line-height: 1.5rem; text-align: left; }
-    .warning { flex-shrink: 0; width: 16px; height: 16px; }
+    .badge.verified { background: #f0fdf4; color: #15803d; }
+    .badge-icon { flex-shrink: 0; width: 16px; height: 16px; }
     .section { display: flex; flex-direction: column; gap: .75rem; padding: 1.5rem .5rem; background: #fff; }
     .section + .section { border-top: 1px solid #e5e7eb; }
     .label { color: #4b5563; }
@@ -139,12 +155,12 @@ export function renderConsentPage({ clientName, redirectUri, scopes, fields }: C
   <main class="card">
     <div class="header">
       <div class="logos">
-        <div class="avatar" aria-hidden="true">${initial}</div>
+        ${clientMark}
         ${ARROW_LEFT_RIGHT_ICON}
         <img class="logo" src="${CODEQR_LOGO_DATA_URI}" alt="CodeQR">
       </div>
       <p class="request"><b>${name}</b> is requesting API access for a project on CodeQR.io.</p>
-      <div class="badge">${WARNING_ICON}<span>CodeQR.io has not verified this application. Continue only if you started this connection yourself; if someone sent you this link, refuse.</span></div>
+      ${trust}
     </div>
 
     <div class="section">

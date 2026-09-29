@@ -264,6 +264,36 @@ describe('GET /oauth/authorize', () => {
     expect(response.text).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 
+  it('vouches for a verified redirect_uri whatever name the client registered', async () => {
+    const app = makeApp();
+    const official = 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ';
+    const response = await register(app, { client_name: 'Anything', redirect_uris: [official] });
+
+    const page = await request(app)
+      .get('/oauth/authorize')
+      .query({ ...authorizeParams(response.body.client_id), redirect_uri: official });
+
+    expect(page.text).toContain('<b>ChatGPT</b>');
+    expect(page.text).not.toContain('Anything');
+    expect(page.text).toContain('Verified by CodeQR.io');
+    expect(page.text).not.toContain('has not verified');
+  });
+
+  it('does not vouch for a client that only borrows a verified name', async () => {
+    // Same name, same host, another ChatGPT connector: the code would go to
+    // whoever owns that connector, not to CodeQR's app.
+    const app = makeApp();
+    const other = 'https://chatgpt.com/connector/oauth/someoneElse';
+    const response = await register(app, { client_name: 'ChatGPT', redirect_uris: [other] });
+
+    const page = await request(app)
+      .get('/oauth/authorize')
+      .query({ ...authorizeParams(response.body.client_id), redirect_uri: other });
+
+    expect(page.text).toContain('has not verified');
+    expect(page.text).not.toContain('Verified by CodeQR.io');
+  });
+
   it('keeps the browser’s existing binding so parallel sign-ins do not clash', async () => {
     const app = makeApp();
     const clientId = await registerClient(app);

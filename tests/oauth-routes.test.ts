@@ -279,6 +279,29 @@ describe('GET /oauth/authorize', () => {
     expect(page.text).not.toContain('has not verified');
   });
 
+  it('tells CodeQR which verified client the signup came from, and nothing for any other', async () => {
+    const approveWith = async (redirectUri: string, clientName: string) => {
+      const app = makeApp();
+      const { body } = await register(app, { client_name: clientName, redirect_uris: [redirectUri] });
+      const page = await request(app)
+        .get('/oauth/authorize')
+        .query({ ...authorizeParams(body.client_id), redirect_uri: redirectUri });
+      const binding = bindingFrom(page)!;
+      const response = await submitConsent(app, body.client_id, {
+        binding,
+        overrides: { redirect_uri: redirectUri },
+      });
+      return new URL(response.headers.location).searchParams;
+    };
+
+    const verified = await approveWith('https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'Anything');
+    const borrowed = await approveWith('https://chatgpt.com/connector/oauth/someoneElse', 'ChatGPT');
+
+    expect(verified.get('mcp_client')).toBe('chatgpt');
+    expect(borrowed.has('mcp_client')).toBe(false);
+    expect(borrowed.get('state')).toBeTruthy();
+  });
+
   it('does not vouch for a client that only borrows a verified name', async () => {
     // Same name, same host, another ChatGPT connector: the code would go to
     // whoever owns that connector, not to CodeQR's app.

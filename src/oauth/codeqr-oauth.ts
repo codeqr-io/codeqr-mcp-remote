@@ -42,7 +42,11 @@ export function needsRefresh(credentials: CodeQRCredentials, now = Date.now()): 
 /**
  * Where the user is sent to log in, pick a project, and approve.
  */
-export function buildAuthorizeUrl(params: { redirectUri: string; state: string }): string {
+export function buildAuthorizeUrl(params: {
+  redirectUri: string;
+  state: string;
+  mcpClient?: string;
+}): string {
   const url = new URL(`${config.codeqrAppUrl}/oauth/authorize`);
 
   url.searchParams.set('client_id', config.codeqrOAuthClientId);
@@ -51,6 +55,7 @@ export function buildAuthorizeUrl(params: { redirectUri: string; state: string }
   // CodeQR splits on comma, space, or plus; space is the RFC 6749 separator.
   url.searchParams.set('scope', CODEQR_OAUTH_SCOPES.join(' '));
   url.searchParams.set('state', params.state);
+  if (params.mcpClient) url.searchParams.set('mcp_client', params.mcpClient);
 
   return url.toString();
 }

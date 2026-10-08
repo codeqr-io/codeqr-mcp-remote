@@ -45,7 +45,7 @@ import { verifyCodeChallenge } from '../oauth/pkce.js';
 import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-oauth.js';
 import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding.js';
 import { sendConsentPage } from '../oauth/consent-page.js';
-import { findVerifiedClient } from '../oauth/verified-clients.js';
+import { mcpClientLabel } from '../oauth/mcp-client-label.js';
 import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
 import { clientIdentity, keyHashPrefix, logEvent, redirectHost } from '../telemetry.js';
@@ -216,9 +216,7 @@ export function createOAuthRouter(): Router {
       buildAuthorizeUrl({
         redirectUri: getCallbackUrl(req),
         state: brokerState,
-        // Only a verified client is named: registration is open, so a
-        // self-declared name would put any label on the signup.
-        mcpClient: findVerifiedClient(request.redirectUri)?.id,
+        mcpClient: mcpClientLabel(request.redirectUri),
       }),
     );
   });

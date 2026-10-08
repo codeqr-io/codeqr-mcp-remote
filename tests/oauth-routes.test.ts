@@ -279,7 +279,7 @@ describe('GET /oauth/authorize', () => {
     expect(page.text).not.toContain('has not verified');
   });
 
-  it('tells CodeQR which verified client the signup came from, and nothing for any other', async () => {
+  it('tells CodeQR which client the signup came from, by where its redirect URI points', async () => {
     const approveWith = async (redirectUri: string, clientName: string) => {
       const app = makeApp();
       const { body } = await register(app, { client_name: clientName, redirect_uris: [redirectUri] });
@@ -295,11 +295,13 @@ describe('GET /oauth/authorize', () => {
     };
 
     const verified = await approveWith('https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'Anything');
-    const borrowed = await approveWith('https://chatgpt.com/connector/oauth/someoneElse', 'ChatGPT');
+    const claude = await approveWith('https://claude.ai/api/mcp/auth_callback', 'Claude');
+    const unknown = await approveWith('https://attacker.test/callback', 'ChatGPT');
 
     expect(verified.get('mcp_client')).toBe('chatgpt');
-    expect(borrowed.has('mcp_client')).toBe(false);
-    expect(borrowed.get('state')).toBeTruthy();
+    expect(claude.get('mcp_client')).toBe('claude');
+    expect(unknown.get('mcp_client')).toBe('other');
+    expect(unknown.get('state')).toBeTruthy();
   });
 
   it('does not vouch for a client that only borrows a verified name', async () => {

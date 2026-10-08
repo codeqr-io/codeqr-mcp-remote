@@ -1,18 +1,32 @@
 import express from 'express';
 import request from 'supertest';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 process.env.CODEQR_APP_URL = 'https://app.example.test';
 process.env.CODEQR_OAUTH_CLIENT_ID = 'codeqr_app_test';
 process.env.CODEQR_OAUTH_CLIENT_SECRET = 'secret_test';
+// Importing src/index.ts would otherwise start a listener.
+process.env.VERCEL = '1';
 
 vi.mock('../src/oauth/codeqr-oauth.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/oauth/codeqr-oauth.js')>();
   return { ...actual, exchangeCodeForCredentials: vi.fn() };
 });
 
-const { exchangeCodeForCredentials } = await import('../src/oauth/codeqr-oauth.js');
+vi.mock('../src/oauth/refresh.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/oauth/refresh.js')>();
+  return { ...actual, resolveCodeQRToken: vi.fn(actual.resolveCodeQRToken) };
+});
+
+const { exchangeCodeForCredentials, CodeQROAuthError } = await import('../src/oauth/codeqr-oauth.js');
+const { resolveCodeQRToken } = await import('../src/oauth/refresh.js');
+const actualRefresh = await vi.importActual<typeof import('../src/oauth/refresh.js')>('../src/oauth/refresh.js');
+const { createAccessToken } = await import('../src/oauth/store.js');
+const { findVerifiedClient } = await import('../src/oauth/verified-clients.js');
+const { handleMcpRequest } = await import('../src/routes/mcp.js');
+const indexApp = (await import('../src/index.js')).default;
 const { createOAuthRouter } = await import('../src/routes/oauth.js');
 const { BINDING_COOKIE } = await import('../src/oauth/browser-binding.js');
 const { requireBearerToken } = await import('../src/middleware/auth.js');
@@ -47,6 +61,8 @@ beforeEach(() => {
     }
     return true;
   }) as typeof process.stdout.write);
+  vi.mocked(resolveCodeQRToken).mockReset();
+  vi.mocked(resolveCodeQRToken).mockImplementation(actualRefresh.resolveCodeQRToken);
   mockExchange.mockReset();
   mockExchange.mockResolvedValue({
     accessToken: CODEQR_ACCESS,
@@ -414,5 +430,259 @@ describe('handleToolCall onOutcome', () => {
 
     expect(outcomes).toEqual([c.expected]);
     expect(withCallback).toEqual(without);
+  });
+});
+
+describe('callback no_code', () => {
+  it('no_code when CodeQR returns with a valid state but neither code nor error', async () => {
+    const app = makeApp();
+    const clientId = await registerClient(app);
+    const { challenge } = pkce();
+    const { binding, brokerState } = await approve(app, clientId, challenge);
+
+    await request(app).get('/oauth/callback').set('Cookie', cookieHeader(binding)).query({ state: brokerState });
+
+    const callbacks = lines.filter((l) => l.event === 'oauth.callback');
+    expect(callbacks.map((l) => [l.outcome, l.reason])).toEqual([['error', 'no_code']]);
+    expect(callbacks[0].clientId).toBe(clientId);
+  });
+});
+
+describe('verified client identity', () => {
+  // The verified list is private to src; its key is read from the source so the
+  // URL is not copied here, and findVerifiedClient confirms it is the real key.
+  const verifiedRedirect = readFileSync(new URL('../src/oauth/verified-clients.ts', import.meta.url), 'utf8').match(
+    /'(https:\/\/[^']+)':\s*\{/,
+  )![1];
+
+  async function registerAs(app: express.Express, name: string, redirectUri: string) {
+    const response = await request(app)
+      .post('/oauth/register')
+      .set('x-real-ip', nextAddress())
+      .send({ client_name: name, redirect_uris: [redirectUri] });
+    return response.body.client_id as string;
+  }
+
+  it('resolves the verified redirect URI to a verified client', () => {
+    expect(findVerifiedClient(verifiedRedirect)).toBeDefined();
+  });
+
+  it('marks register and consent events verified for the verified redirect_uri, with the verified name', async () => {
+    const app = makeApp();
+    const verifiedName = findVerifiedClient(verifiedRedirect)!.name;
+    const clientId = await registerAs(app, 'Some Other Name', verifiedRedirect);
+    const { challenge } = pkce();
+    await request(app)
+      .get('/oauth/authorize')
+      .query({ ...authorizeParams(clientId, challenge), redirect_uri: verifiedRedirect });
+
+    expect(eventOf('oauth.register')).toMatchObject({ client: verifiedName, verified: true });
+    expect(eventOf('oauth.consent', (l) => l.decision === 'shown')).toMatchObject({
+      client: verifiedName,
+      verified: true,
+    });
+  });
+
+  it('marks a client that merely registers as "ChatGPT" on another redirect_uri as unverified', async () => {
+    const app = makeApp();
+    const clientId = await registerAs(app, 'ChatGPT', CLIENT_REDIRECT);
+    const { challenge } = pkce();
+    await request(app).get('/oauth/authorize').query(authorizeParams(clientId, challenge));
+
+    expect(findVerifiedClient(CLIENT_REDIRECT)).toBeUndefined();
+    expect(eventOf('oauth.register')).toMatchObject({ client: 'ChatGPT', verified: false });
+    expect(eventOf('oauth.consent', (l) => l.decision === 'shown')).toMatchObject({
+      client: 'ChatGPT',
+      verified: false,
+    });
+  });
+});
+
+describe('requireBearerToken refresh failures', () => {
+  const SESSION = {
+    accessToken: 'cq_live_SECRET_aaaa9999',
+    refreshToken: 'cq_refresh_SECRET_bbbb8888',
+    expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+  };
+
+  function authApp() {
+    const app = express();
+    app.use(requireBearerToken);
+    app.get('/mcp', (_req, res) => {
+      res.json({ ok: true });
+    });
+    return app;
+  }
+
+  async function session() {
+    return createAccessToken({ clientId: 'client_refresh_1', codeqr: SESSION, scope: 'links' });
+  }
+
+  it('codeqr_grant_revoked: invalid_grant gives 401 and the event carries the same status and the clientId', async () => {
+    vi.mocked(resolveCodeQRToken).mockRejectedValue(new CodeQROAuthError('invalid_grant', 'revoked'));
+    const { token } = await session();
+
+    const res = await request(authApp()).get('/mcp').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(401);
+    const rejected = lines.filter((l) => l.event === 'mcp.rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      status: res.status,
+      reason: 'codeqr_grant_revoked',
+      clientId: 'client_refresh_1',
+    });
+  });
+
+  it('codeqr_refresh_unavailable: any other error gives 503 and the event carries the same status', async () => {
+    vi.mocked(resolveCodeQRToken).mockRejectedValue(new Error('upstash blip'));
+    const { token } = await session();
+
+    const res = await request(authApp()).get('/mcp').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(503);
+    const rejected = lines.filter((l) => l.event === 'mcp.rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      status: res.status,
+      reason: 'codeqr_refresh_unavailable',
+      clientId: 'client_refresh_1',
+    });
+  });
+
+  it('codeqr_refresh_unavailable also covers a CodeQROAuthError that is not invalid_grant', async () => {
+    vi.mocked(resolveCodeQRToken).mockRejectedValue(new CodeQROAuthError('server_error', 'upstream 500'));
+    const { token } = await session();
+
+    const res = await request(authApp()).get('/mcp').set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(503);
+    expect(lines.find((l) => l.event === 'mcp.rejected')).toMatchObject({
+      status: res.status,
+      reason: 'codeqr_refresh_unavailable',
+    });
+  });
+});
+
+describe('handleMcpRequest', () => {
+  const ACCEPT = 'application/json, text/event-stream';
+  const CLIENT_ID = 'client_mcp_1';
+  const CODEQR_TOKEN = 'cq_live_SECRET_mcp_0000ffff';
+
+  async function bearer() {
+    const { token } = await createAccessToken({
+      clientId: CLIENT_ID,
+      codeqr: {
+        accessToken: CODEQR_TOKEN,
+        refreshToken: 'cq_refresh_SECRET_mcp',
+        expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+      },
+      scope: 'links',
+    });
+    return token;
+  }
+
+  const rpc = (token: string, body: unknown, accept: string | undefined = ACCEPT) => {
+    const req = request(indexApp).post('/mcp').set('Authorization', `Bearer ${token}`);
+    if (accept) req.set('Accept', accept);
+    return req.set('Content-Type', 'application/json').send(JSON.stringify(body));
+  };
+
+  const rejected = () => lines.filter((l) => l.event === 'mcp.rejected');
+
+  it('no_api_key: reaching the handler without req.codeqrApiKey answers 401 and logs the same status', async () => {
+    const app = express();
+    app.use(express.json());
+    app.post('/mcp', handleMcpRequest);
+
+    const res = await request(app).post('/mcp').send({});
+
+    expect(res.status).toBe(401);
+    expect(rejected()).toHaveLength(1);
+    expect(rejected()[0]).toMatchObject({ status: res.status, reason: 'no_api_key' });
+  });
+
+  it('transport rejection: a missing Accept type logs status = HTTP status and the JSON-RPC error code of the body', async () => {
+    const token = await bearer();
+
+    const res = await rpc(token, { jsonrpc: '2.0', id: 1, method: 'tools/list' }, 'application/json');
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const error = res.body.error as { code: number; message: string };
+    expect(typeof error.code).toBe('number');
+    expect(rejected()).toHaveLength(1);
+    const event = rejected()[0];
+    expect(event).toMatchObject({
+      status: res.status,
+      reason: 'transport',
+      clientId: CLIENT_ID,
+      rpcMethod: 'tools/list',
+      accept: 'application/json',
+    });
+    expect(typeof event.rpcError).toBe('string');
+    expect((event.rpcError as string).length).toBeGreaterThan(0);
+    expect(event.rpcError).toBe(`${error.code} ${error.message}`.trim().slice(0, 200));
+    expect((event.rpcError as string).startsWith(String(error.code))).toBe(true);
+  });
+
+  it('transport rejection: invalid JSON-RPC logs status = HTTP status and the JSON-RPC error code of the body', async () => {
+    const token = await bearer();
+
+    const res = await rpc(token, { not: 'jsonrpc' });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const error = res.body.error as { code: number; message: string };
+    const event = rejected().find((l) => l.reason === 'transport')!;
+    expect(event.status).toBe(res.status);
+    expect((event.rpcError as string).startsWith(String(error.code))).toBe(true);
+    expect(rawOutput).not.toContain(CODEQR_TOKEN);
+  });
+
+  it('mcp.tools_list: an authenticated tools/list logs the session clientId and keyHashPrefix', async () => {
+    const token = await bearer();
+
+    const res = await rpc(token, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
+
+    expect(res.status).toBe(200);
+    const events = lines.filter((l) => l.event === 'mcp.tools_list');
+    expect(events).toHaveLength(1);
+    expect(events[0].clientId).toBe(CLIENT_ID);
+    expect(events[0].keyHashPrefix).toBe(keyHashPrefix(CODEQR_TOKEN));
+    expect(rejected()).toHaveLength(0);
+  });
+
+  it('mcp.tool_call: an unknown tool logs tool, outcome error, reason unknown_tool and a numeric durationMs', async () => {
+    const token = await bearer();
+
+    const res = await rpc(token, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'no_such_tool', arguments: {} },
+    });
+
+    expect(res.status).toBe(200);
+    const events = lines.filter((l) => l.event === 'mcp.tool_call');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      tool: 'no_such_tool',
+      outcome: 'error',
+      reason: 'unknown_tool',
+      clientId: CLIENT_ID,
+      keyHashPrefix: keyHashPrefix(CODEQR_TOKEN),
+    });
+    expect(typeof events[0].durationMs).toBe('number');
+    expect(events[0].durationMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  it('invalid_body: a malformed JSON body logs reason invalid_body, path /mcp and the response status', async () => {
+    const res = await request(indexApp)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .send('{');
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(rejected()).toHaveLength(1);
+    expect(rejected()[0]).toMatchObject({ reason: 'invalid_body', path: '/mcp', status: res.status });
   });
 });

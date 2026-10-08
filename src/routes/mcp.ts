@@ -889,14 +889,23 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   // The transport answers malformed requests itself (wrong Accept header, bad
   // JSON-RPC, unsupported protocol version) without reaching the handlers
   // above, and the only account of why is the JSON-RPC error it writes as the
-  // body. `end` is wrapped to keep that body for the event below; nothing else
-  // about the response changes.
-  let errorBody: string | undefined;
+  // body — through `write`, then an empty `end`. Both are wrapped to keep what
+  // an error response carries; nothing else about the response changes.
+  let errorBody = '';
+  const keepErrorBody = (chunk: unknown) => {
+    if (res.statusCode < 400 || errorBody.length >= MAX_ERROR_BODY_LENGTH) return;
+    if (typeof chunk === 'string' || chunk instanceof Uint8Array) {
+      errorBody += Buffer.from(chunk).toString('utf8').slice(0, MAX_ERROR_BODY_LENGTH - errorBody.length);
+    }
+  };
+  const write = res.write.bind(res) as (...args: unknown[]) => boolean;
+  res.write = ((...args: unknown[]) => {
+    keepErrorBody(args[0]);
+    return write(...args);
+  }) as Response['write'];
   const end = res.end.bind(res) as (...args: unknown[]) => Response;
   res.end = ((...args: unknown[]) => {
-    if (res.statusCode >= 400 && (typeof args[0] === 'string' || Buffer.isBuffer(args[0]))) {
-      errorBody = String(args[0]).slice(0, MAX_ERROR_BODY_LENGTH);
-    }
+    keepErrorBody(args[0]);
     return end(...args);
   }) as Response['end'];
 
@@ -923,7 +932,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 
 const MAX_ERROR_BODY_LENGTH = 2_000;
 
-function rpcError(body: string | undefined): string | undefined {
+function rpcError(body: string): string | undefined {
   if (!body) return undefined;
   try {
     const error = (JSON.parse(body) as { error?: { code?: unknown; message?: unknown } }).error;

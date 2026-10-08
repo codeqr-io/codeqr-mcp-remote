@@ -165,3 +165,57 @@ describe('Axiom delivery', () => {
     expect(waitUntil.mock.calls[0][0]).toBeInstanceOf(Promise);
   });
 });
+
+describe('reportSendFailure', () => {
+  let stderrLines: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    stderrLines = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      for (const raw of String(chunk).split('\n')) {
+        if (!raw.trim()) continue;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed?.event === 'telemetry.send_failed') stderrLines.push(parsed);
+        } catch {
+          // not one of ours
+        }
+      }
+      return true;
+    }) as typeof process.stderr.write);
+    process.env.AXIOM_TOKEN = 'axiom-token-1';
+  });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
+
+  it('writes telemetry.send_failed with the status to stderr, not stdout, when Axiom answers !ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+
+    logEvent('oauth.register', { outcome: 'ok' });
+    await settle();
+
+    expect(stderrLines).toHaveLength(1);
+    expect(stderrLines[0]).toMatchObject({ service: 'mcp', event: 'telemetry.send_failed', status: 403 });
+    expect(lines.map((l) => l.event)).toEqual(['oauth.register']);
+  });
+
+  it('writes reason network to stderr, not stdout, when fetch rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+
+    logEvent('oauth.register', { outcome: 'ok' });
+    await settle();
+
+    expect(stderrLines).toHaveLength(1);
+    expect(stderrLines[0]).toMatchObject({ event: 'telemetry.send_failed', reason: 'network' });
+    expect(lines.map((l) => l.event)).toEqual(['oauth.register']);
+  });
+
+  it('stays silent when Axiom answers ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
+
+    logEvent('oauth.register', { outcome: 'ok' });
+    await settle();
+
+    expect(stderrLines).toHaveLength(0);
+  });
+});

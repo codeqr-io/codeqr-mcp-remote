@@ -703,15 +703,15 @@ function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
 }
 
+/** How a tool call ended, for telemetry; never sent to the client. */
+export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
+
 /**
  * Exported for the tests. The argument-validation branch is only meaningful at
  * this call site: a unit test of `validateSmartRules` passes just as happily
  * when nothing calls it, so the check that matters is that an invalid payload
  * never reaches `client`.
  */
-/** How a tool call ended, for telemetry; never sent to the client. */
-export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
-
 export async function handleToolCall(
   client: Codeqr,
   apiKey: string,
@@ -888,12 +888,24 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 
   // The transport answers malformed requests itself (wrong Accept header, bad
   // JSON-RPC, unsupported protocol version) without reaching the handlers
-  // above, so the request shape is what is left to explain those refusals.
+  // above, and the only account of why is the JSON-RPC error it writes as the
+  // body. `end` is wrapped to keep that body for the event below; nothing else
+  // about the response changes.
+  let errorBody: string | undefined;
+  const end = res.end.bind(res) as (...args: unknown[]) => Response;
+  res.end = ((...args: unknown[]) => {
+    if (res.statusCode >= 400 && (typeof args[0] === 'string' || Buffer.isBuffer(args[0]))) {
+      errorBody = String(args[0]).slice(0, MAX_ERROR_BODY_LENGTH);
+    }
+    return end(...args);
+  }) as Response['end'];
+
   res.on('finish', () => {
     if (res.statusCode < 400) return;
     logEvent('mcp.rejected', {
       status: res.statusCode,
       reason: 'transport',
+      rpcError: rpcError(errorBody),
       clientId: req.oauthClientId,
       userAgent: req.headers['user-agent'],
       rpcMethod: rpcMethods(req.body),
@@ -907,6 +919,21 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   const transport = new StreamableHTTPServerTransport();
   await server.connect(transport as any);
   await transport.handleRequest(req, res, req.body);
+}
+
+const MAX_ERROR_BODY_LENGTH = 2_000;
+
+function rpcError(body: string | undefined): string | undefined {
+  if (!body) return undefined;
+  try {
+    const error = (JSON.parse(body) as { error?: { code?: unknown; message?: unknown } }).error;
+    if (error && (typeof error.code === 'number' || typeof error.message === 'string')) {
+      return `${error.code ?? ''} ${error.message ?? ''}`.trim();
+    }
+  } catch {
+    // Not JSON: report that rather than the raw body.
+  }
+  return 'unparsed_body';
 }
 
 function rpcMethods(body: unknown): string | undefined {

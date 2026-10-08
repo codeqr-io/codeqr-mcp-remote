@@ -47,7 +47,7 @@ import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding
 import { sendConsentPage } from '../oauth/consent-page.js';
 import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
-import { clientLabel, keyHashPrefix, logEvent, redirectHost } from '../telemetry.js';
+import { clientIdentity, keyHashPrefix, logEvent, redirectHost } from '../telemetry.js';
 
 const MAX_CLIENT_NAME_LENGTH = 200;
 const MAX_REDIRECT_URIS = 10;
@@ -117,7 +117,7 @@ export function createOAuthRouter(): Router {
     logEvent('oauth.register', {
       outcome: 'ok',
       clientId: client.clientId,
-      client: clientLabel(client.redirectUris[0] ?? '', client.clientName),
+      ...clientIdentity(client.redirectUris[0] ?? '', client.clientName),
       redirectHost: redirectHost(client.redirectUris[0] ?? ''),
     });
 
@@ -142,7 +142,7 @@ export function createOAuthRouter(): Router {
     logEvent('oauth.consent', {
       decision: 'shown',
       clientId: request.client.clientId,
-      client: clientLabel(request.redirectUri, request.client.clientName),
+      ...clientIdentity(request.redirectUri, request.client.clientName),
     });
 
     sendConsentPage(res, {
@@ -180,10 +180,10 @@ export function createOAuthRouter(): Router {
     const request = await checkAuthorizeRequest(body, res);
     if (!request) return;
 
-    const client = clientLabel(request.redirectUri, request.client.clientName);
+    const identity = clientIdentity(request.redirectUri, request.client.clientName);
 
     if (param(body.decision) !== 'approve') {
-      logEvent('oauth.consent', { decision: 'deny', clientId: request.client.clientId, client });
+      logEvent('oauth.consent', { decision: 'deny', clientId: request.client.clientId, ...identity });
       redirectWithError(
         res,
         request.redirectUri,
@@ -208,7 +208,7 @@ export function createOAuthRouter(): Router {
       browserBinding: issueBinding(req, res),
     });
 
-    logEvent('oauth.consent', { decision: 'approve', clientId: request.client.clientId, client });
+    logEvent('oauth.consent', { decision: 'approve', clientId: request.client.clientId, ...identity });
 
     res.redirect(
       303,

@@ -18,13 +18,14 @@
  *   6. Client sends MCP requests to POST /mcp with Bearer token
  */
 
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import { config, SERVER_VERSION } from './config.js';
 import { createWellKnownRouter } from './routes/well-known.js';
 import { createOAuthRouter } from './routes/oauth.js';
 import { handleMcpRequest } from './routes/mcp.js';
 import { requireBearerToken } from './middleware/auth.js';
+import { logEvent } from './telemetry.js';
 
 const app = express();
 
@@ -63,6 +64,24 @@ app.use((_req, res) => {
     error_description: 'Endpoint not found. MCP requests should be sent to POST /mcp',
     docs: 'https://docs.codeqr.io/mcp',
   });
+});
+
+// ── Body that does not parse ─────────────────────────────────────────────────
+
+// express.json() refuses a malformed body before any route or auth runs, so
+// this is the only place that refusal can be logged. The response stays
+// Express's own.
+app.use((err: unknown, req: Request, _res: Response, next: NextFunction) => {
+  const bodyError = err as { type?: unknown; status?: unknown } | null;
+  if (bodyError?.type === 'entity.parse.failed') {
+    logEvent('mcp.rejected', {
+      status: typeof bodyError.status === 'number' ? bodyError.status : 400,
+      reason: 'invalid_body',
+      path: req.path,
+      userAgent: req.headers['user-agent'],
+    });
+  }
+  next(err);
 });
 
 // ── Server startup (only for local development) ─────────────────────────────

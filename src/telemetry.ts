@@ -35,6 +35,8 @@ export interface EventFields {
   clientId?: string;
   /** Display name: the verified one when the redirect URI is known, else the self-declared one. */
   client?: string;
+  /** Whether `client` comes from verified-clients.ts rather than from what the client registered as. */
+  verified?: boolean;
   redirectHost?: string;
   /** See keyHashPrefix(). */
   keyHashPrefix?: string;
@@ -42,6 +44,10 @@ export interface EventFields {
   durationMs?: number;
   status?: number;
   rpcMethod?: string;
+  /** `<code> <message>` of the JSON-RPC error the MCP transport answered with. */
+  rpcError?: string;
+  /** Route path, without the query string. */
+  path?: string;
   userAgent?: string;
   accept?: string;
   protocolVersion?: string;
@@ -54,12 +60,15 @@ export const EVENT_FIELDS: ReadonlyArray<keyof EventFields> = [
   'decision',
   'clientId',
   'client',
+  'verified',
   'redirectHost',
   'keyHashPrefix',
   'tool',
   'durationMs',
   'status',
   'rpcMethod',
+  'rpcError',
+  'path',
   'userAgent',
   'accept',
   'protocolVersion',
@@ -74,6 +83,9 @@ export const MAX_FIELD_LENGTH = 200;
  * (app: lib/auth/hash-token.ts, lib/auth/build-api-key-auth-log.ts). Logging the
  * same prefix here joins an MCP event to the installation and to the API calls
  * it produced, without ever writing the token.
+ *
+ * The token is rotated on every 7-day renewal, and the prefix with it, so a
+ * long-lived session spans several prefixes; `clientId` is what stays put.
  */
 export const KEY_HASH_PREFIX_LENGTH = 12;
 
@@ -81,9 +93,16 @@ export function keyHashPrefix(codeqrToken: string): string {
   return createHash('sha256').update(codeqrToken).digest('hex').slice(0, KEY_HASH_PREFIX_LENGTH);
 }
 
-/** Same rule the consent screen uses to name the app asking for access. */
-export function clientLabel(redirectUri: string, clientName: string): string {
-  return findVerifiedClient(redirectUri)?.name ?? clientName;
+/**
+ * Same rule the consent screen uses to name the app asking for access. Anyone
+ * can register as "ChatGPT", so `verified` is what tells the two apart.
+ */
+export function clientIdentity(
+  redirectUri: string,
+  clientName: string,
+): Pick<EventFields, 'client' | 'verified'> {
+  const verified = findVerifiedClient(redirectUri);
+  return { client: verified?.name ?? clientName, verified: Boolean(verified) };
 }
 
 export function redirectHost(redirectUri: string): string {
@@ -123,16 +142,31 @@ function pick(fields: EventFields): Record<string, string | number | boolean> {
   return picked;
 }
 
+/**
+ * A wrong token or dataset would otherwise fail silently for as long as it
+ * stays wrong. Written to stderr, not through logEvent, so a broken sink
+ * cannot feed itself.
+ */
+function reportSendFailure(detail: { status?: number; reason?: string }): void {
+  try {
+    process.stderr.write(`${JSON.stringify({ service: 'mcp', event: 'telemetry.send_failed', ...detail })}\n`);
+  } catch {
+    // Nothing left to report to.
+  }
+}
+
 async function sendToAxiom(token: string, dataset: string, entry: Record<string, unknown>): Promise<void> {
   try {
-    await fetch(`${AXIOM_INGEST_URL}/${encodeURIComponent(dataset)}/ingest`, {
+    const response = await fetch(`${AXIOM_INGEST_URL}/${encodeURIComponent(dataset)}/ingest`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify([entry]),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     });
+    if (!response.ok) reportSendFailure({ status: response.status });
   } catch {
     // The stdout line above is the record of last resort.
+    reportSendFailure({ reason: 'network' });
   }
 }
 

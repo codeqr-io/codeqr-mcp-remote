@@ -234,8 +234,13 @@ export async function consumeAuthorizationCode(code: string): Promise<Authorizat
  * user, so expiring this one weekly would force a re-authorization that nothing
  * actually requires. When the refresh token does die, the next call fails and
  * the client walks the user through authorizing again.
+ *
+ * CodeQR issues each rotated refresh token with a fresh 120 days (app:
+ * app/api/oauth/token/refresh-access-token.ts), so the session is renewed by
+ * the same amount whenever the credentials under it are — see
+ * updateAccessTokenCredentials.
  */
-const ACCESS_TOKEN_TTL_SEC = 120 * 24 * 60 * 60;
+export const ACCESS_TOKEN_TTL_SEC = 120 * 24 * 60 * 60;
 
 export async function createAccessToken(params: {
   clientId: string;
@@ -263,11 +268,16 @@ export async function createAccessToken(params: {
 }
 
 /**
- * Persist a rotated CodeQR credential pair against an existing session.
+ * Persist a rotated CodeQR credential pair against an existing session, and
+ * give the session the full lifetime again.
  *
- * The remaining TTL is recomputed from `expiresAt` instead of being reset, so
- * that renewing the CodeQR token underneath never silently extends the life of
- * the session above it.
+ * A session can only reach this point by presenting a CodeQR refresh token
+ * CodeQR just accepted, and that rotation gave the new refresh token another
+ * 120 days. Keeping the session on its first deadline would end a connection
+ * people use every week on a fixed date, while the grant under it is still
+ * valid; revocation is unaffected, since a revoked grant fails the rotation
+ * with invalid_grant before this runs. A session already past its deadline is
+ * left to expire — this never brings one back.
  */
 export async function updateAccessTokenCredentials(
   token: string,
@@ -280,20 +290,29 @@ export async function updateAccessTokenCredentials(
     if (raw == null) return;
 
     const entry = decode<AccessToken>(raw);
-    const remainingSec = Math.floor((entry.expiresAt - Date.now()) / 1000);
-    if (remainingSec <= 0) return;
+    if (entry.expiresAt <= Date.now()) return;
 
     await redis.set(
       `${KEY_ACCESS_TOKEN}${token}`,
-      JSON.stringify({ ...entry, codeqr, codeqrApiKey: undefined }),
-      { ex: remainingSec },
+      JSON.stringify({
+        ...entry,
+        codeqr,
+        codeqrApiKey: undefined,
+        expiresAt: Date.now() + ACCESS_TOKEN_TTL_SEC * 1000,
+      }),
+      { ex: ACCESS_TOKEN_TTL_SEC },
     );
     return;
   }
 
   const entry = accessTokens.get(token);
-  if (!entry) return;
-  accessTokens.set(token, { ...entry, codeqr, codeqrApiKey: undefined });
+  if (!entry || entry.expiresAt <= Date.now()) return;
+  accessTokens.set(token, {
+    ...entry,
+    codeqr,
+    codeqrApiKey: undefined,
+    expiresAt: Date.now() + ACCESS_TOKEN_TTL_SEC * 1000,
+  });
 }
 
 export async function validateAccessToken(token: string): Promise<AccessToken | null> {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ACCESS_TOKEN_TTL_SEC,
   acquireRefreshLock,
   allowRegistration,
   consumePendingAuthorization,
@@ -83,26 +84,55 @@ describe('refresh lock', () => {
 });
 
 describe('updateAccessTokenCredentials', () => {
-  it('replaces the credentials without extending the session', async () => {
-    const { token, expiresIn } = await createAccessToken({
-      clientId: 'client_test',
-      codeqr: { accessToken: 'old', refreshToken: 'r_old', expiresAt: Date.now() + MINUTE },
-      scope: 'mcp:tools',
-    });
+  it('replaces the credentials and gives the session the full lifetime from the rotation', async () => {
+    vi.useFakeTimers();
+    try {
+      const { token, expiresIn } = await createAccessToken({
+        clientId: 'client_test',
+        codeqr: { accessToken: 'old', refreshToken: 'r_old', expiresAt: Date.now() + MINUTE },
+        scope: 'mcp:tools',
+      });
+      expect(expiresIn).toBe(ACCESS_TOKEN_TTL_SEC);
+      const before = await validateAccessToken(token);
 
-    const before = await validateAccessToken(token);
-    await updateAccessTokenCredentials(token, {
-      accessToken: 'new',
-      refreshToken: 'r_new',
-      expiresAt: Date.now() + 7 * 24 * 60 * MINUTE,
-    });
-    const after = await validateAccessToken(token);
+      // A rotation 30 days into the session.
+      vi.advanceTimersByTime(30 * 24 * 60 * MINUTE);
+      const rotatedAt = Date.now();
+      await updateAccessTokenCredentials(token, {
+        accessToken: 'new',
+        refreshToken: 'r_new',
+        expiresAt: rotatedAt + 7 * 24 * 60 * MINUTE,
+      });
+      const after = await validateAccessToken(token);
 
-    expect(after?.codeqr?.accessToken).toBe('new');
-    // Rotating the CodeQR token underneath must not silently extend the life of
-    // the MCP session above it.
-    expect(after?.expiresAt).toBe(before?.expiresAt);
-    expect(expiresIn).toBe(120 * 24 * 60 * 60);
+      expect(after?.codeqr?.accessToken).toBe('new');
+      expect(after?.expiresAt).toBe(rotatedAt + ACCESS_TOKEN_TTL_SEC * 1000);
+      expect(after!.expiresAt).toBeGreaterThan(before!.expiresAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never brings back a session that is already past its deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const { token } = await createAccessToken({
+        clientId: 'client_test',
+        codeqr: { accessToken: 'old', refreshToken: 'r_old', expiresAt: Date.now() + MINUTE },
+        scope: 'mcp:tools',
+      });
+
+      vi.advanceTimersByTime(ACCESS_TOKEN_TTL_SEC * 1000 + MINUTE);
+      await updateAccessTokenCredentials(token, {
+        accessToken: 'new',
+        refreshToken: 'r_new',
+        expiresAt: Date.now() + MINUTE,
+      });
+
+      expect(await validateAccessToken(token)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drops the legacy API key once a session moves to OAuth credentials', async () => {

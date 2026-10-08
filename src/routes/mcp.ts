@@ -14,6 +14,7 @@ import { getWorkspace } from '../codeqr/workspace.js';
 import { SERVER_VERSION } from '../config.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
+import { logEvent } from '../telemetry.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -702,6 +703,9 @@ function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
 }
 
+/** How a tool call ended, for telemetry; never sent to the client. */
+export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
+
 /**
  * Exported for the tests. The argument-validation branch is only meaningful at
  * this call site: a unit test of `validateSmartRules` passes just as happily
@@ -713,6 +717,7 @@ export async function handleToolCall(
   apiKey: string,
   name: string,
   args: Record<string, unknown>,
+  onOutcome?: (outcome: ToolOutcome) => void,
 ): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   try {
     let result: unknown;
@@ -723,6 +728,7 @@ export async function handleToolCall(
         // serialized error body the SDK would surface. See smart-rules.ts.
         const invalid = validateSmartRules(args.rules);
         if (invalid) {
+          onOutcome?.('invalid_arguments');
           return { content: [{ type: 'text', text: `Error: ${invalid}` }], isError: true };
         }
         result = await client.links.create(asParams<Codeqr.LinkCreateParams>(args));
@@ -744,6 +750,7 @@ export async function handleToolCall(
       case 'update_link': {
         const invalid = validateSmartRules(args.rules);
         if (invalid) {
+          onOutcome?.('invalid_arguments');
           return { content: [{ type: 'text', text: `Error: ${invalid}` }], isError: true };
         }
         const { linkId, ...params } = args;
@@ -797,12 +804,14 @@ export async function handleToolCall(
         result = await getWorkspace(apiKey);
         break;
       default:
+        onOutcome?.('unknown_tool');
         return {
           content: [{ type: 'text', text: `Unknown tool: ${name}` }],
           isError: true,
         };
     }
 
+    onOutcome?.('ok');
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
@@ -812,7 +821,8 @@ export async function handleToolCall(
     // class alike, a plan gate included: the two local validation branches
     // above carry it too, and a text format that varies with the class of
     // failure is one more thing the next reader has to discover.
-    const { message } = toClientFacingError(error);
+    const { message, isPlanLimit } = toClientFacingError(error);
+    onOutcome?.(isPlanLimit ? 'plan_limit' : 'api_error');
     return {
       content: [{ type: 'text', text: `Error: ${message}` }],
       isError: true,
@@ -826,6 +836,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   const apiKey = req.codeqrApiKey;
 
   if (!apiKey) {
+    logEvent('mcp.rejected', { status: 401, reason: 'no_api_key', clientId: req.oauthClientId });
     res.status(401).json({
       error: 'unauthorized',
       error_description: 'No API key associated with this token',
@@ -852,17 +863,96 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   // Register tool handlers on the underlying server
   const innerServer = server.server;
 
-  innerServer.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS,
-  }));
+  innerServer.setRequestHandler(ListToolsRequestSchema, async () => {
+    logEvent('mcp.tools_list', { clientId: req.oauthClientId, keyHashPrefix: req.keyHashPrefix });
+    return { tools: TOOLS };
+  });
 
   innerServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    return handleToolCall(client, apiKey, name, args as Record<string, unknown>);
+    const startedAt = Date.now();
+    let outcome = 'api_error' as ToolOutcome;
+    const result = await handleToolCall(client, apiKey, name, args as Record<string, unknown>, (ended) => {
+      outcome = ended;
+    });
+    logEvent('mcp.tool_call', {
+      clientId: req.oauthClientId,
+      keyHashPrefix: req.keyHashPrefix,
+      tool: name,
+      outcome: outcome === 'ok' ? 'ok' : 'error',
+      reason: outcome === 'ok' ? undefined : outcome,
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
+  });
+
+  // The transport answers malformed requests itself (wrong Accept header, bad
+  // JSON-RPC, unsupported protocol version) without reaching the handlers
+  // above, and the only account of why is the JSON-RPC error it writes as the
+  // body — through `write`, then an empty `end`. Both are wrapped to keep what
+  // an error response carries; nothing else about the response changes.
+  let errorBody = '';
+  const keepErrorBody = (chunk: unknown) => {
+    if (res.statusCode < 400 || errorBody.length >= MAX_ERROR_BODY_LENGTH) return;
+    if (typeof chunk === 'string' || chunk instanceof Uint8Array) {
+      errorBody += Buffer.from(chunk).toString('utf8').slice(0, MAX_ERROR_BODY_LENGTH - errorBody.length);
+    }
+  };
+  const write = res.write.bind(res) as (...args: unknown[]) => boolean;
+  res.write = ((...args: unknown[]) => {
+    keepErrorBody(args[0]);
+    return write(...args);
+  }) as Response['write'];
+  const end = res.end.bind(res) as (...args: unknown[]) => Response;
+  res.end = ((...args: unknown[]) => {
+    keepErrorBody(args[0]);
+    return end(...args);
+  }) as Response['end'];
+
+  res.on('finish', () => {
+    if (res.statusCode < 400) return;
+    logEvent('mcp.rejected', {
+      status: res.statusCode,
+      reason: 'transport',
+      rpcError: rpcError(errorBody),
+      clientId: req.oauthClientId,
+      userAgent: req.headers['user-agent'],
+      rpcMethod: rpcMethods(req.body),
+      accept: req.headers.accept,
+      protocolVersion: headerValue(req.headers['mcp-protocol-version']),
+      hasSession: Boolean(req.headers['mcp-session-id']),
+    });
   });
 
   // Handle the request via StreamableHTTP transport
   const transport = new StreamableHTTPServerTransport();
   await server.connect(transport as any);
   await transport.handleRequest(req, res, req.body);
+}
+
+const MAX_ERROR_BODY_LENGTH = 2_000;
+
+function rpcError(body: string): string | undefined {
+  if (!body) return undefined;
+  try {
+    const error = (JSON.parse(body) as { error?: { code?: unknown; message?: unknown } }).error;
+    if (error && (typeof error.code === 'number' || typeof error.message === 'string')) {
+      return `${error.code ?? ''} ${error.message ?? ''}`.trim();
+    }
+  } catch {
+    // Not JSON: report that rather than the raw body.
+  }
+  return 'unparsed_body';
+}
+
+function rpcMethods(body: unknown): string | undefined {
+  const messages = Array.isArray(body) ? body : [body];
+  const methods = messages
+    .map((message) => (typeof message === 'object' && message !== null ? (message as { method?: unknown }).method : undefined))
+    .filter((method): method is string => typeof method === 'string');
+  return methods.length > 0 ? methods.join(',') : undefined;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value.join(',') : value;
 }

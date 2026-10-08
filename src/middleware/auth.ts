@@ -11,6 +11,7 @@ import { validateAccessToken } from '../oauth/store.js';
 import { resolveCodeQRToken } from '../oauth/refresh.js';
 import { CodeQROAuthError } from '../oauth/codeqr-oauth.js';
 import { getServerUrl } from '../config.js';
+import { keyHashPrefix, logEvent } from '../telemetry.js';
 
 declare global {
   namespace Express {
@@ -23,6 +24,8 @@ declare global {
       codeqrApiKey?: string;
       oauthClientId?: string;
       oauthScope?: string;
+      /** First characters of the CodeQR token's hash; see telemetry.ts. */
+      keyHashPrefix?: string;
     }
   }
 }
@@ -58,6 +61,7 @@ export async function requireBearerToken(
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    reject(req, 401, authHeader ? 'malformed_authorization' : 'missing_authorization');
     unauthorized(
       req,
       res,
@@ -71,6 +75,7 @@ export async function requireBearerToken(
   const accessToken = await validateAccessToken(token);
 
   if (!accessToken) {
+    reject(req, 401, 'unknown_or_expired_token');
     unauthorized(req, res, 'invalid_token', 'Access token is invalid or expired');
     return;
   }
@@ -85,6 +90,7 @@ export async function requireBearerToken(
     // would send the user to re-authorize over a problem that fixes itself —
     // and each re-authorization costs them their other MCP session.
     if (err instanceof CodeQROAuthError && err.code === 'invalid_grant') {
+      reject(req, 401, 'codeqr_grant_revoked', accessToken.clientId);
       unauthorized(
         req,
         res,
@@ -94,6 +100,7 @@ export async function requireBearerToken(
       return;
     }
 
+    reject(req, 503, 'codeqr_refresh_unavailable', accessToken.clientId);
     res.status(503).json({
       error: 'temporarily_unavailable',
       error_description: 'Could not renew CodeQR authorization right now. Try again shortly.',
@@ -104,6 +111,21 @@ export async function requireBearerToken(
   req.codeqrApiKey = codeqrToken;
   req.oauthClientId = accessToken.clientId;
   req.oauthScope = accessToken.scope;
+  req.keyHashPrefix = keyHashPrefix(codeqrToken);
 
   next();
+}
+
+/**
+ * Most refusals here are unauthenticated discovery probes — registries and
+ * scanners hit /mcp around the clock — so the user agent is what tells them
+ * apart from a client whose session stopped working.
+ */
+function reject(req: Request, status: number, reason: string, clientId?: string): void {
+  logEvent('mcp.rejected', {
+    status,
+    reason,
+    clientId,
+    userAgent: req.headers['user-agent'],
+  });
 }

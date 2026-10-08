@@ -50,6 +50,11 @@ export interface AccessToken {
   codeqr?: CodeQRCredentials;
   scope: string;
   expiresAt: number;
+  /**
+   * Epoch ms the session was issued. Absent on sessions issued before it was
+   * recorded; issuedAt() derives it for those.
+   */
+  createdAt?: number;
 }
 
 export interface RegisteredClient {
@@ -234,8 +239,36 @@ export async function consumeAuthorizationCode(code: string): Promise<Authorizat
  * user, so expiring this one weekly would force a re-authorization that nothing
  * actually requires. When the refresh token does die, the next call fails and
  * the client walks the user through authorizing again.
+ *
+ * CodeQR issues each rotated refresh token with a fresh 120 days (app:
+ * app/api/oauth/token/refresh-access-token.ts), so the session is renewed by
+ * the same amount whenever the credentials under it are — see
+ * updateAccessTokenCredentials.
  */
-const ACCESS_TOKEN_TTL_SEC = 120 * 24 * 60 * 60;
+export const ACCESS_TOKEN_TTL_SEC = 120 * 24 * 60 * 60;
+
+/**
+ * Hard ceiling on a session, however often it is renewed. Renewal on use means
+ * a leaked bearer would otherwise live for as long as whoever holds it keeps
+ * calling; this bounds that, at the cost of one re-authorization a year for
+ * people who use the connection all the time.
+ */
+export const MAX_SESSION_LIFETIME_SEC = 365 * 24 * 60 * 60;
+
+/**
+ * The deadline a session gets when its CodeQR credentials are rotated at
+ * `now`: another full lifetime, never past the ceiling counted from issue.
+ *
+ * Sessions issued before `createdAt` was recorded never had their deadline
+ * moved, so their issue time is exactly one lifetime before it.
+ */
+export function issuedAt(entry: Pick<AccessToken, 'expiresAt' | 'createdAt'>): number {
+  return entry.createdAt ?? entry.expiresAt - ACCESS_TOKEN_TTL_SEC * 1000;
+}
+
+export function renewedExpiry(entry: Pick<AccessToken, 'expiresAt' | 'createdAt'>, now: number): number {
+  return Math.min(now + ACCESS_TOKEN_TTL_SEC * 1000, issuedAt(entry) + MAX_SESSION_LIFETIME_SEC * 1000);
+}
 
 export async function createAccessToken(params: {
   clientId: string;
@@ -243,17 +276,24 @@ export async function createAccessToken(params: {
   scope: string;
 }): Promise<{ token: string; expiresIn: number }> {
   const token = `cqr_mcp_${nanoid(64)}`;
-  const expiresIn = ACCESS_TOKEN_TTL_SEC;
+  const now = Date.now();
   const entry: AccessToken = {
     token,
     ...params,
-    expiresAt: Date.now() + expiresIn * 1000,
+    expiresAt: now + ACCESS_TOKEN_TTL_SEC * 1000,
+    createdAt: now,
   };
+
+  // What the client is told is the ceiling, not the first deadline: the
+  // session is renewed on use, and a client that trusted a 120-day
+  // `expires_in` would drop a token this server still accepts. It can still
+  // end earlier — idle, or revoked — and the client then gets a 401.
+  const expiresIn = MAX_SESSION_LIFETIME_SEC;
 
   const redis = getRedis();
   if (redis) {
     await redis.set(`${KEY_ACCESS_TOKEN}${token}`, JSON.stringify(entry), {
-      ex: expiresIn,
+      ex: ACCESS_TOKEN_TTL_SEC,
     });
     return { token, expiresIn };
   }
@@ -263,11 +303,16 @@ export async function createAccessToken(params: {
 }
 
 /**
- * Persist a rotated CodeQR credential pair against an existing session.
+ * Persist a rotated CodeQR credential pair against an existing session, and
+ * give the session the full lifetime again.
  *
- * The remaining TTL is recomputed from `expiresAt` instead of being reset, so
- * that renewing the CodeQR token underneath never silently extends the life of
- * the session above it.
+ * A session can only reach this point by presenting a CodeQR refresh token
+ * CodeQR just accepted, and that rotation gave the new refresh token another
+ * 120 days. Keeping the session on its first deadline would end a connection
+ * people use every week on a fixed date, while the grant under it is still
+ * valid; revocation is unaffected, since a revoked grant fails the rotation
+ * with invalid_grant before this runs. A session already past its deadline is
+ * left to expire — this never brings one back.
  */
 export async function updateAccessTokenCredentials(
   token: string,
@@ -280,20 +325,40 @@ export async function updateAccessTokenCredentials(
     if (raw == null) return;
 
     const entry = decode<AccessToken>(raw);
-    const remainingSec = Math.floor((entry.expiresAt - Date.now()) / 1000);
-    if (remainingSec <= 0) return;
+    const now = Date.now();
+    if (entry.expiresAt <= now) return;
 
+    const expiresAt = renewedExpiry(entry, now);
+    const ex = Math.ceil((expiresAt - now) / 1000);
+    if (ex <= 0) return;
+
+    // `xx`: write only if the key still exists. It was set with the session's
+    // own TTL, so a session that expired (or was deleted) between the read
+    // above and this write is not recreated.
     await redis.set(
       `${KEY_ACCESS_TOKEN}${token}`,
-      JSON.stringify({ ...entry, codeqr, codeqrApiKey: undefined }),
-      { ex: remainingSec },
+      JSON.stringify({
+        ...entry,
+        codeqr,
+        codeqrApiKey: undefined,
+        createdAt: issuedAt(entry),
+        expiresAt,
+      }),
+      { ex, xx: true },
     );
     return;
   }
 
   const entry = accessTokens.get(token);
-  if (!entry) return;
-  accessTokens.set(token, { ...entry, codeqr, codeqrApiKey: undefined });
+  const now = Date.now();
+  if (!entry || entry.expiresAt <= now) return;
+  accessTokens.set(token, {
+    ...entry,
+    codeqr,
+    codeqrApiKey: undefined,
+    createdAt: issuedAt(entry),
+    expiresAt: renewedExpiry(entry, now),
+  });
 }
 
 export async function validateAccessToken(token: string): Promise<AccessToken | null> {

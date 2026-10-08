@@ -9,6 +9,7 @@
  *   UPSTASH_REDIS_REST_URL   - Optional; Upstash Redis REST URL (persistent OAuth store)
  *   UPSTASH_REDIS_REST_TOKEN - Optional; Upstash Redis REST token
  *   CODEQR_APP_URL           - CodeQR dashboard origin (default: https://app.codeqr.io)
+ *   CODEQR_API_URL           - CodeQR API origin, for the public QR image generator (default: https://api.codeqr.io)
  *   CODEQR_OAUTH_CLIENT_ID   - client_id of the OAuth app registered in CodeQR
  *   CODEQR_OAUTH_CLIENT_SECRET - its client_secret (this server is a confidential client)
  *   AXIOM_TOKEN              - Optional; Axiom ingest token. Funnel events (telemetry.ts) are sent to Axiom only when set
@@ -39,6 +40,7 @@ export const config = {
   logLevel: (process.env.LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error',
 
   codeqrAppUrl: (process.env.CODEQR_APP_URL || 'https://app.codeqr.io').replace(/\/+$/, ''),
+  codeqrApiUrl: (process.env.CODEQR_API_URL || 'https://api.codeqr.io').replace(/\/+$/, ''),
   codeqrOAuthClientId: process.env.CODEQR_OAUTH_CLIENT_ID || '',
   codeqrOAuthClientSecret: process.env.CODEQR_OAUTH_CLIENT_SECRET || '',
 };

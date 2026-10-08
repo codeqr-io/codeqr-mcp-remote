@@ -50,6 +50,11 @@ export interface AccessToken {
   codeqr?: CodeQRCredentials;
   scope: string;
   expiresAt: number;
+  /**
+   * Epoch ms the session was issued. Absent on sessions issued before it was
+   * recorded; issuedAt() derives it for those.
+   */
+  createdAt?: number;
 }
 
 export interface RegisteredClient {
@@ -242,6 +247,29 @@ export async function consumeAuthorizationCode(code: string): Promise<Authorizat
  */
 export const ACCESS_TOKEN_TTL_SEC = 120 * 24 * 60 * 60;
 
+/**
+ * Hard ceiling on a session, however often it is renewed. Renewal on use means
+ * a leaked bearer would otherwise live for as long as whoever holds it keeps
+ * calling; this bounds that, at the cost of one re-authorization a year for
+ * people who use the connection all the time.
+ */
+export const MAX_SESSION_LIFETIME_SEC = 365 * 24 * 60 * 60;
+
+/**
+ * The deadline a session gets when its CodeQR credentials are rotated at
+ * `now`: another full lifetime, never past the ceiling counted from issue.
+ *
+ * Sessions issued before `createdAt` was recorded never had their deadline
+ * moved, so their issue time is exactly one lifetime before it.
+ */
+export function issuedAt(entry: Pick<AccessToken, 'expiresAt' | 'createdAt'>): number {
+  return entry.createdAt ?? entry.expiresAt - ACCESS_TOKEN_TTL_SEC * 1000;
+}
+
+export function renewedExpiry(entry: Pick<AccessToken, 'expiresAt' | 'createdAt'>, now: number): number {
+  return Math.min(now + ACCESS_TOKEN_TTL_SEC * 1000, issuedAt(entry) + MAX_SESSION_LIFETIME_SEC * 1000);
+}
+
 export async function createAccessToken(params: {
   clientId: string;
   codeqr: CodeQRCredentials;
@@ -249,10 +277,12 @@ export async function createAccessToken(params: {
 }): Promise<{ token: string; expiresIn: number }> {
   const token = `cqr_mcp_${nanoid(64)}`;
   const expiresIn = ACCESS_TOKEN_TTL_SEC;
+  const now = Date.now();
   const entry: AccessToken = {
     token,
     ...params,
-    expiresAt: Date.now() + expiresIn * 1000,
+    expiresAt: now + expiresIn * 1000,
+    createdAt: now,
   };
 
   const redis = getRedis();
@@ -290,28 +320,39 @@ export async function updateAccessTokenCredentials(
     if (raw == null) return;
 
     const entry = decode<AccessToken>(raw);
-    if (entry.expiresAt <= Date.now()) return;
+    const now = Date.now();
+    if (entry.expiresAt <= now) return;
 
+    const expiresAt = renewedExpiry(entry, now);
+    const ex = Math.ceil((expiresAt - now) / 1000);
+    if (ex <= 0) return;
+
+    // `xx`: write only if the key still exists. It was set with the session's
+    // own TTL, so a session that expired (or was deleted) between the read
+    // above and this write is not recreated.
     await redis.set(
       `${KEY_ACCESS_TOKEN}${token}`,
       JSON.stringify({
         ...entry,
         codeqr,
         codeqrApiKey: undefined,
-        expiresAt: Date.now() + ACCESS_TOKEN_TTL_SEC * 1000,
+        createdAt: issuedAt(entry),
+        expiresAt,
       }),
-      { ex: ACCESS_TOKEN_TTL_SEC },
+      { ex, xx: true },
     );
     return;
   }
 
   const entry = accessTokens.get(token);
-  if (!entry || entry.expiresAt <= Date.now()) return;
+  const now = Date.now();
+  if (!entry || entry.expiresAt <= now) return;
   accessTokens.set(token, {
     ...entry,
     codeqr,
     codeqrApiKey: undefined,
-    expiresAt: Date.now() + ACCESS_TOKEN_TTL_SEC * 1000,
+    createdAt: issuedAt(entry),
+    expiresAt: renewedExpiry(entry, now),
   });
 }
 

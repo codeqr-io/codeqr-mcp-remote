@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ACCESS_TOKEN_TTL_SEC,
+  MAX_SESSION_LIFETIME_SEC,
+  issuedAt,
+  renewedExpiry,
   acquireRefreshLock,
   allowRegistration,
   consumePendingAuthorization,
@@ -159,6 +162,60 @@ describe('updateAccessTokenCredentials', () => {
         expiresAt: Date.now() + MINUTE,
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('session lifetime ceiling', () => {
+  const DAY = 24 * 60 * MINUTE;
+  const TTL = ACCESS_TOKEN_TTL_SEC * 1000;
+  const CEILING = MAX_SESSION_LIFETIME_SEC * 1000;
+
+  it('gives a full lifetime from the rotation while far from the ceiling', () => {
+    const createdAt = 1_000_000;
+    const now = createdAt + 30 * DAY;
+    expect(renewedExpiry({ createdAt, expiresAt: createdAt + TTL }, now)).toBe(now + TTL);
+  });
+
+  it('never goes past the ceiling counted from issue', () => {
+    const createdAt = 1_000_000;
+    const now = createdAt + CEILING - 10 * DAY;
+    expect(renewedExpiry({ createdAt, expiresAt: now + DAY }, now)).toBe(createdAt + CEILING);
+  });
+
+  it('derives the issue time of a session recorded before createdAt existed', () => {
+    const issued = 1_000_000;
+    const legacy = { expiresAt: issued + TTL };
+    expect(issuedAt(legacy)).toBe(issued);
+    expect(renewedExpiry(legacy, issued + CEILING - DAY)).toBe(issued + CEILING);
+  });
+
+  it('stops renewing a session used all along once it reaches the ceiling', async () => {
+    vi.useFakeTimers();
+    try {
+      const { token } = await createAccessToken({
+        clientId: 'client_test',
+        codeqr: { accessToken: 'a0', refreshToken: 'r0', expiresAt: Date.now() + MINUTE },
+        scope: 'mcp:tools',
+      });
+      const issued = Date.now();
+
+      // A rotation every 100 days, each while the session is still valid.
+      for (let i = 1; (i * 100 * DAY) < CEILING; i++) {
+        vi.setSystemTime(issued + i * 100 * DAY);
+        await updateAccessTokenCredentials(token, {
+          accessToken: `a${i}`,
+          refreshToken: `r${i}`,
+          expiresAt: Date.now() + 7 * DAY,
+        });
+        const entry = await validateAccessToken(token);
+        expect(entry?.expiresAt).toBeLessThanOrEqual(issued + CEILING);
+      }
+
+      vi.setSystemTime(issued + CEILING + MINUTE);
+      expect(await validateAccessToken(token)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

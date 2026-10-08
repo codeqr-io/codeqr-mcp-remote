@@ -11,7 +11,8 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
-import { SERVER_VERSION } from '../config.js';
+import { config, SERVER_VERSION } from '../config.js';
+import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { logEvent } from '../telemetry.js';
@@ -812,9 +813,12 @@ export async function handleToolCall(
     }
 
     onOutcome?.('ok');
-    return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-    };
+    const content: Array<{ type: 'text'; text: string }> = [
+      { type: 'text', text: JSON.stringify(result, null, 2) },
+    ];
+    const note = await createdNote(name, result, apiKey);
+    if (note) content.push({ type: 'text', text: note });
+    return { content };
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
     // one point rather than per tool. The `Error:` prefix is kept for every
@@ -929,6 +933,42 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   await server.connect(transport as any);
   await transport.handleRequest(req, res, req.body);
 }
+
+/**
+ * Only the two create tools get the note. The workspace slug is one extra
+ * call to CodeQR; when it fails the dashboard line is left out rather than
+ * failing a code that was already created.
+ */
+async function createdNote(name: string, result: unknown, apiKey: string): Promise<string | undefined> {
+  if (name !== 'create_qrcode' && name !== 'create_link') return undefined;
+  const created = asCreatedResource(result);
+  if (!created) return undefined;
+
+  const workspaceSlug = await Promise.race([
+    getWorkspace(apiKey).then(
+      (workspace) => workspace.slug,
+      () => undefined,
+    ),
+    new Promise<undefined>((resolve) => {
+      AbortSignal.timeout(SLUG_LOOKUP_TIMEOUT_MS).addEventListener('abort', () => resolve(undefined));
+    }),
+  ]);
+
+  return nextStepsText({
+    kind: name === 'create_qrcode' ? 'qrcode' : 'link',
+    created,
+    workspaceSlug,
+    appUrl: config.codeqrAppUrl,
+    apiUrl: config.codeqrApiUrl,
+  });
+}
+
+/**
+ * The code is already created when the slug is looked up, so a slow CodeQR
+ * should cost the note its dashboard line, not delay the answer by the
+ * lookup's own 10-second timeout.
+ */
+export const SLUG_LOOKUP_TIMEOUT_MS = 1_500;
 
 const MAX_ERROR_BODY_LENGTH = 2_000;
 

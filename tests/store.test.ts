@@ -95,7 +95,8 @@ describe('updateAccessTokenCredentials', () => {
         codeqr: { accessToken: 'old', refreshToken: 'r_old', expiresAt: Date.now() + MINUTE },
         scope: 'mcp:tools',
       });
-      expect(expiresIn).toBe(ACCESS_TOKEN_TTL_SEC);
+      // The client is told the ceiling; the stored deadline is one lifetime.
+      expect(expiresIn).toBe(MAX_SESSION_LIFETIME_SEC);
       const before = await validateAccessToken(token);
 
       // A rotation 30 days into the session.

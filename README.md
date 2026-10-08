@@ -26,8 +26,11 @@ Remote MCP server for [CodeQR](https://codeqr.io) with OAuth 2.0 authentication.
 5. Client exchanges authorization code for access token (PKCE)
 6. Client sends MCP tool calls with Bearer token to `POST /mcp`
 
-The CodeQR access token lasts 7 days and is renewed transparently, so the
-session stays valid for the 120-day life of the refresh token.
+The CodeQR access token lasts 7 days and is renewed transparently. Each
+renewal gives the session another 120 days, so a connection in use does not
+expire on a fixed date; an idle one ends 120 days after its last renewal, and
+none outlives one year from when it was made (the `expires_in` the client is
+given).
 
 ## Quick Start
 

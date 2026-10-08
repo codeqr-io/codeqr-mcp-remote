@@ -276,19 +276,24 @@ export async function createAccessToken(params: {
   scope: string;
 }): Promise<{ token: string; expiresIn: number }> {
   const token = `cqr_mcp_${nanoid(64)}`;
-  const expiresIn = ACCESS_TOKEN_TTL_SEC;
   const now = Date.now();
   const entry: AccessToken = {
     token,
     ...params,
-    expiresAt: now + expiresIn * 1000,
+    expiresAt: now + ACCESS_TOKEN_TTL_SEC * 1000,
     createdAt: now,
   };
+
+  // What the client is told is the ceiling, not the first deadline: the
+  // session is renewed on use, and a client that trusted a 120-day
+  // `expires_in` would drop a token this server still accepts. It can still
+  // end earlier — idle, or revoked — and the client then gets a 401.
+  const expiresIn = MAX_SESSION_LIFETIME_SEC;
 
   const redis = getRedis();
   if (redis) {
     await redis.set(`${KEY_ACCESS_TOKEN}${token}`, JSON.stringify(entry), {
-      ex: expiresIn,
+      ex: ACCESS_TOKEN_TTL_SEC,
     });
     return { token, expiresIn };
   }

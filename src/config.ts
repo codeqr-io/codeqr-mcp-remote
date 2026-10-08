@@ -11,6 +11,8 @@
  *   CODEQR_APP_URL           - CodeQR dashboard origin (default: https://app.codeqr.io)
  *   CODEQR_OAUTH_CLIENT_ID   - client_id of the OAuth app registered in CodeQR
  *   CODEQR_OAUTH_CLIENT_SECRET - its client_secret (this server is a confidential client)
+ *   AXIOM_TOKEN              - Optional; Axiom ingest token. Funnel events (telemetry.ts) are sent to Axiom only when set
+ *   AXIOM_DATASET            - Optional; Axiom dataset for those events (default: codeqr, the one the app logs to)
  */
 
 import type { Request } from 'express';

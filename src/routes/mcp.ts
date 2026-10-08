@@ -944,10 +944,15 @@ async function createdNote(name: string, result: unknown, apiKey: string): Promi
   const created = asCreatedResource(result);
   if (!created) return undefined;
 
-  const workspaceSlug = await getWorkspace(apiKey).then(
-    (workspace) => workspace.slug,
-    () => undefined,
-  );
+  const workspaceSlug = await Promise.race([
+    getWorkspace(apiKey).then(
+      (workspace) => workspace.slug,
+      () => undefined,
+    ),
+    new Promise<undefined>((resolve) => {
+      AbortSignal.timeout(SLUG_LOOKUP_TIMEOUT_MS).addEventListener('abort', () => resolve(undefined));
+    }),
+  ]);
 
   return nextStepsText({
     kind: name === 'create_qrcode' ? 'qrcode' : 'link',
@@ -957,6 +962,13 @@ async function createdNote(name: string, result: unknown, apiKey: string): Promi
     apiUrl: config.codeqrApiUrl,
   });
 }
+
+/**
+ * The code is already created when the slug is looked up, so a slow CodeQR
+ * should cost the note its dashboard line, not delay the answer by the
+ * lookup's own 10-second timeout.
+ */
+export const SLUG_LOOKUP_TIMEOUT_MS = 1_500;
 
 const MAX_ERROR_BODY_LENGTH = 2_000;
 

@@ -37,6 +37,16 @@ describe('buildAuthorizeUrl', () => {
     expect(scopes).not.toContain('webhooks.write');
   });
 
+  it('names the MCP client only when one is given', () => {
+    const named = new URL(
+      buildAuthorizeUrl({ redirectUri: 'https://mcp.test/oauth/callback', state: 's1', mcpClient: 'chatgpt' }),
+    );
+    const unnamed = new URL(buildAuthorizeUrl({ redirectUri: 'https://mcp.test/oauth/callback', state: 's1' }));
+
+    expect(named.searchParams.get('mcp_client')).toBe('chatgpt');
+    expect(unnamed.searchParams.has('mcp_client')).toBe(false);
+  });
+
   it('points at CodeQR with the parameters its authorize endpoint requires', () => {
     const url = new URL(buildAuthorizeUrl({ redirectUri: 'https://mcp.test/oauth/callback', state: 's1' }));
 

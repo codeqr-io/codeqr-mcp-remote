@@ -12,11 +12,16 @@ import { CHATGPT_LOGO_DATA_URI } from './chatgpt-logo.js';
 
 export interface VerifiedClient {
   name: string;
+  /**
+   * Sent to CodeQR as `mcp_client` so the signup records which client brought
+   * it. CodeQR only accepts lowercase letters, digits and hyphens, up to 32.
+   */
+  id: string;
   /** A data: URI, so the consent page still loads nothing from another origin. */
   logo?: string;
 }
 
-const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
+export const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
   // CodeQR's published app in the ChatGPT app directory: the last segment is
   // the callback_id ChatGPT used when connecting it. Whether ChatGPT keeps that
   // ID for every user of the app is not documented anywhere we could check.
@@ -24,7 +29,11 @@ const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
   // moves every connector to the shared
   // https://chatgpt.com/connector_platform_oauth_redirect), this entry simply
   // stops matching and the app gets the unverified warning, as before.
-  'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ': { name: 'ChatGPT', logo: CHATGPT_LOGO_DATA_URI },
+  'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ': {
+    name: 'ChatGPT',
+    id: 'chatgpt',
+    logo: CHATGPT_LOGO_DATA_URI,
+  },
 };
 
 export function findVerifiedClient(redirectUri: string): VerifiedClient | undefined {

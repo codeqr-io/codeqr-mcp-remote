@@ -1,0 +1,206 @@
+/* Same base as the item card: host variables when given, ChatGPT's neutral
+   palette otherwise, brand color only on the primary button and the chart. */
+:root {
+  color-scheme: light;
+  --cq-bg: var(--color-background-primary, #ffffff);
+  --cq-soft: var(--color-background-secondary, #f4f4f4);
+  --cq-text: var(--color-text-primary, #0d0d0d);
+  --cq-muted: var(--color-text-secondary, #5d5d5d);
+  --cq-border: var(--color-border-primary, #e3e3e3);
+  --cq-accent: #1b59f5;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --cq-bg: var(--color-background-primary, #212121);
+  --cq-soft: var(--color-background-secondary, #2f2f2f);
+  --cq-text: var(--color-text-primary, #ececec);
+  --cq-muted: var(--color-text-secondary, #b4b4b4);
+  --cq-border: var(--color-border-primary, #3d3d3d);
+  --cq-accent: #4f7df7;
+}
+
+body {
+  margin: 0;
+  background: var(--cq-bg);
+  color: var(--cq-text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.head p {
+  margin: 0;
+}
+
+.caption {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.period,
+.section,
+.axis,
+.more,
+.status,
+.tile .label {
+  color: var(--cq-muted);
+  font-size: 12px;
+}
+
+.total {
+  margin-top: 4px;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 72px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--cq-soft);
+}
+
+.tile .value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.trend {
+  margin: 0;
+}
+
+.trend svg {
+  display: block;
+  width: 100%;
+  height: 56px;
+}
+
+.trend .line {
+  fill: none;
+  stroke: var(--cq-accent);
+  stroke-width: 2;
+}
+
+.trend .area {
+  fill: var(--cq-accent);
+  opacity: 0.12;
+}
+
+.axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section {
+  margin: 0;
+  font-weight: 500;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  row-gap: 3px;
+}
+
+.row .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row .value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--cq-soft);
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--cq-accent);
+}
+
+.more,
+.empty,
+.status {
+  margin: 0;
+}
+
+.empty {
+  color: var(--cq-muted);
+}
+
+.chips,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--cq-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cq-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.chip {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+button.chip[aria-pressed='true'] {
+  border-color: var(--cq-text);
+  font-weight: 600;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+button.primary {
+  border-color: transparent;
+  background: var(--cq-accent);
+  color: #ffffff;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--cq-accent);
+  outline-offset: 2px;
+}

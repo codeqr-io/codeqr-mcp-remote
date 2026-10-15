@@ -9,7 +9,8 @@ process.env.CODEQR_OAUTH_CLIENT_SECRET = 'secret_test';
 process.env.VERCEL = '1';
 
 const { TOOLS } = await import('../src/routes/mcp.js');
-const { ITEM_CARD_URI, WIDGET_DESCRIPTION, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } = await import('../src/widgets/index.js');
+const { ANALYTICS_DESCRIPTION, ANALYTICS_URI, ITEM_CARD_URI, WIDGET_DESCRIPTION, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } =
+  await import('../src/widgets/index.js');
 const { createAccessToken } = await import('../src/oauth/store.js');
 const indexApp = (await import('../src/index.js')).default;
 
@@ -26,15 +27,20 @@ describe('withWidgetMeta', () => {
     expect(withWidgetMeta(TOOLS)).toEqual(TOOLS);
   });
 
-  it('points exactly the card tools at the item card template once switched on', () => {
+  it('points the card tools at the item card and get_analytics at the analytics card once switched on', () => {
     vi.stubEnv('MCP_UI_ENABLED', '1');
 
     const tools = withWidgetMeta(TOOLS);
     const withCard = tools.filter((tool) => tool._meta);
 
-    expect(withCard.map((tool) => tool.name).sort()).toEqual(CARD_TOOLS);
+    expect(withCard.map((tool) => tool.name).sort()).toEqual([...CARD_TOOLS, 'get_analytics'].sort());
     for (const tool of withCard) {
-      expect(tool._meta).toMatchObject({ ui: { resourceUri: ITEM_CARD_URI }, 'openai/outputTemplate': ITEM_CARD_URI });
+      const analytics = tool.name === 'get_analytics';
+      const uri = analytics ? ANALYTICS_URI : ITEM_CARD_URI;
+      expect(tool._meta).toMatchObject({ ui: { resourceUri: uri }, 'openai/outputTemplate': uri });
+      // Only the analytics card calls its tool back, so only it is callable from the card.
+      expect(tool._meta?.['openai/widgetAccessible'], tool.name).toBe(analytics ? true : undefined);
+      expect((tool._meta?.ui as { visibility?: string[] }).visibility, tool.name).toEqual(analytics ? ['model', 'app'] : undefined);
       for (const key of ['openai/toolInvocation/invoking', 'openai/toolInvocation/invoked']) {
         const status = tool._meta?.[key] as string;
         expect(status.length, `${tool.name} ${key}`).toBeLessThanOrEqual(64);
@@ -79,6 +85,19 @@ describe('readWidget', () => {
 
     expect(content._meta.ui).not.toHaveProperty('domain');
     expect(content._meta['openai/widgetDomain']).toMatch(/^https:\/\//);
+  });
+
+  it('serves the analytics card loading nothing, with no clipboard access', () => {
+    const [content] = readWidget(ANALYTICS_URI)?.contents ?? [];
+
+    expect(content).toMatchObject({ uri: ANALYTICS_URI, mimeType: WIDGET_MIME_TYPE });
+    expect(content.text).toContain('<div id="root"></div>');
+    expect(content.text).not.toMatch(/<script[^>]*\bsrc=/i);
+    expect(content._meta.ui).toEqual({ csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: true });
+    expect(content._meta['openai/widgetCSP']).toMatchObject({ resource_domains: [], redirect_domains: ['https://app.example.test'] });
+    expect(content._meta['openai/widgetDescription']).toBe(ANALYTICS_DESCRIPTION);
+    expect(ANALYTICS_DESCRIPTION).not.toMatch(SELLING);
+    expect(ANALYTICS_DESCRIPTION).toMatch(/Answer what the user asked first/);
   });
 
   it('serves nothing else', () => {
@@ -175,13 +194,13 @@ describe('resources over /mcp', () => {
     expect(lines.find((line) => line.event === 'mcp.resource_read')).toMatchObject({ outcome: 'error' });
   });
 
-  it('lists the template, and no resource templates, while the card is switched on', async () => {
+  it('lists both templates, and no resource templates, while the cards are switched on', async () => {
     vi.stubEnv('MCP_UI_ENABLED', '1');
 
     const listed = await rpc({ method: 'resources/list', params: {} });
     const templates = await rpc({ method: 'resources/templates/list', params: {} });
 
-    expect(listed.result.resources.map((resource: { uri: string }) => resource.uri)).toEqual([ITEM_CARD_URI]);
+    expect(listed.result.resources.map((resource: { uri: string }) => resource.uri)).toEqual([ITEM_CARD_URI, ANALYTICS_URI]);
     expect(templates.result.resourceTemplates).toEqual([]);
   });
 });

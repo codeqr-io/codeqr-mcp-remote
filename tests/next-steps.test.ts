@@ -240,3 +240,35 @@ describe('handleToolCall item card', () => {
     expect(result._meta?.[ITEM_CARD_META_KEY]).toMatchObject({ editUrl: config.codeqrAppUrl });
   });
 });
+
+describe('handleToolCall analytics card', () => {
+  const ANALYTICS_META_KEY = 'io.codeqr/analytics';
+  const stub = () => ({ analytics: { retrieve: vi.fn().mockResolvedValue({ clicks: 0, scans: 12 }) } });
+  const args = { event: 'scans', groupBy: 'count', qrcodeId: 'qr_1', interval: '7d' };
+
+  afterEach(() => {
+    mockGetWorkspace.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns only the JSON while MCP_UI_ENABLED is unset', async () => {
+    const result = await handleToolCall(stub() as never, 'key', 'get_analytics', args);
+
+    expect(Object.keys(result)).toEqual(['content']);
+    expect(mockGetWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('adds the analytics card, with one workspace lookup for its dashboard link', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
+
+    const result = await handleToolCall(stub() as never, 'key', 'get_analytics', args);
+
+    expect(result.content).toHaveLength(1);
+    expect(result.structuredContent).toMatchObject({ kind: 'analytics', metric: 'scans', total: 12, query: args });
+    expect(result._meta?.[ANALYTICS_META_KEY]).toEqual({
+      dashboardUrl: `${config.codeqrAppUrl}/acme/qrcodes/edit?id=qr_1`,
+    });
+    expect(mockGetWorkspace).toHaveBeenCalledTimes(1);
+  });
+});

@@ -20,6 +20,7 @@ import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
 import { config, isUiEnabled, SERVER_VERSION } from '../config.js';
+import { buildAnalyticsCard } from '../analytics-card.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
@@ -830,7 +831,7 @@ export async function handleToolCall(
     }
 
     onOutcome?.('ok');
-    return await withCreatedNoteAndCard(name, result, apiKey);
+    return await withCreatedNoteAndCard(name, args, result, apiKey);
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
     // one point rather than per tool. The `Error:` prefix is kept for every
@@ -970,14 +971,28 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 }
 
 /**
- * The JSON of the result, plus the note after a create and the item card's
- * data where the card is switched on. Both need the workspace slug, which is
+ * The JSON of the result, plus the note after a create and, where the cards
+ * are switched on, the item card's or the analytics card's data. Both need the workspace slug, which is
  * one extra call to CodeQR, so it is looked up once for the two; when the
  * lookup fails the dashboard line and the card's dashboard link fall back
  * rather than failing a call that already succeeded.
  */
-async function withCreatedNoteAndCard(name: string, result: unknown, apiKey: string): Promise<ToolResult> {
+async function withCreatedNoteAndCard(
+  name: string,
+  args: Record<string, unknown>,
+  result: unknown,
+  apiKey: string,
+): Promise<ToolResult> {
   const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result, null, 2) }];
+
+  if (name === 'get_analytics' && isUiEnabled()) {
+    const card = buildAnalyticsCard(args, result, {
+      slug: await lookupWorkspaceSlug(apiKey),
+      appUrl: config.codeqrAppUrl,
+    });
+    return card ? { content, structuredContent: card.structuredContent, _meta: card.meta } : { content };
+  }
+
   const created = asCreatedResource(result);
   const isCreate = name === 'create_qrcode' || name === 'create_link';
   const cardTool = isUiEnabled() && isItemCardTool(name) ? name : undefined;

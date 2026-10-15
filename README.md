@@ -205,11 +205,19 @@ in the CodeQR dashboard and one that asks how many scans or clicks it had.
 - The result carries `structuredContent` (an allowlist of fields; hosts show it
   to the model too) and `_meta["io.codeqr/card"]` (image and dashboard URLs,
   for the card only). `content` is unchanged, for clients without UI.
-- The page lives in `web/item-card/`. `yarn widgets:build` bundles it into
-  `src/widgets/generated/item-card.ts`, which is committed; `yarn verify`
-  fails when it is stale. To look at it in a browser, run
+- `get_analytics` gets an analytics card (`ui://codeqr/analytics.v1.html`):
+  what is counted and for which period, the total, a trend line or the top
+  five rows, and a button to open the analytics in the dashboard. Its
+  24h / 7d / 30d chips re-run the call from inside the card through the host
+  (`tools/call`), only when the host says it can, and only with intervals
+  every plan can read.
+- The pages live in `web/item-card/` and `web/analytics/`, with the bridge to
+  the host in `web/shared/`. `yarn widgets:build` bundles them into
+  `src/widgets/generated/`, which is committed; `yarn verify` fails when it
+  is stale. To look at them in a browser, run
   `node scripts/build-widgets.mjs --html`, serve `web/dev/` and open
-  `harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375`.
+  `harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375` or
+  `harness.html?widget=analytics&fixture=countries&interval=30d`.
 
 Unset, the tool list, the resource list and every result are what they were.
 

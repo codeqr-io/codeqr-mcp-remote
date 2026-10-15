@@ -3,8 +3,9 @@
  * widget the user's language; anything not listed here falls back to English.
  */
 
-export const LOCALES = ['pt-br', 'pt-pt', 'en', 'es', 'fr', 'de', 'zh', 'ru', 'it', 'ja', 'ko'] as const;
-export type Locale = (typeof LOCALES)[number];
+import type { Locale } from '../shared/locale.js';
+
+export { LOCALES, resolveLocale } from '../shared/locale.js';
 
 export interface Strings {
   dynamic: string;
@@ -203,15 +204,6 @@ const STRINGS: Record<Locale, Strings> = {
     types: { text: '텍스트', phone: '전화', email: '이메일', sms: 'SMS', wifi: 'Wi-Fi', vcard: '연락처', crypto: '암호화폐', whatsapp: 'WhatsApp' },
   },
 };
-
-/** `pt` alone means Brazilian Portuguese, as in the app; other regional tags fall back to their language. */
-export function resolveLocale(tag: string | null | undefined): Locale {
-  const lower = (tag ?? '').trim().toLowerCase().replace('_', '-');
-  if ((LOCALES as readonly string[]).includes(lower)) return lower as Locale;
-  const language = lower.split('-')[0];
-  if (language === 'pt') return 'pt-br';
-  return (LOCALES as readonly string[]).includes(language) ? (language as Locale) : 'en';
-}
 
 export function stringsFor(locale: Locale): Strings {
   return STRINGS[locale];

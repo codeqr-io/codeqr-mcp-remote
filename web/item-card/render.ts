@@ -10,7 +10,7 @@
  * injection would run. tests/item-card-widget.test.ts fails if one appears.
  */
 
-import type { ToolResult } from './bridge.js';
+import type { ToolResult } from '../shared/bridge.js';
 import { fill, type Strings } from './i18n.js';
 
 export const CARD_META_KEY = 'io.codeqr/card';

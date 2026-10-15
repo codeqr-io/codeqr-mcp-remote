@@ -4,7 +4,9 @@
   browser. `yarn widgets:build --html` writes the pages to web/dev/out/, then
   serve web/dev (for example `python3 -m http.server -d web/dev 8790`) and open
   harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375
-  Fixtures: qr, static, wifi, noimage, link.
+  Item card fixtures: qr, static, wifi, noimage, link.
+  Analytics fixtures (widget=analytics): count, composite, domain, timeseries, countries, top_qrcodes; the
+  chips' tools/call is answered with the same shape for the chosen interval.
 -->
 <html>
   <head>
@@ -18,13 +20,15 @@
     </style>
   </head>
   <body>
-    <iframe id="widget" src="out/item-card.html" title="widget"></iframe>
+    <iframe id="widget" title="widget"></iframe>
     <pre id="log"></pre>
     <script>
       const params = new URLSearchParams(location.search);
       const theme = params.get('theme') || 'light';
       const locale = params.get('locale') || 'en-US';
+      const widget = params.get('widget') || 'item-card';
       const frame = document.getElementById('widget');
+      frame.src = `out/${widget}.html`;
       frame.style.width = `${params.get('width') || 600}px`;
       document.body.classList.toggle('dark', theme === 'dark');
 
@@ -46,7 +50,36 @@
           _meta: meta(qrImage, 'links'),
         },
       };
-      const result = fixtures[params.get('fixture') || 'qr'];
+      const scale = { '24h': 0.15, '7d': 1, '30d': 3.6 };
+      const days = (n, start) => Array.from({ length: n }, (_, i) => ({
+        t: new Date(Date.UTC(2026, 9, start + i)).toISOString(),
+        v: Math.round(20 + 15 * Math.sin(i / 1.7) + i * 2),
+      }));
+      // Shaped as src/analytics-card.ts builds them: a QR code's numbers are
+      // scans; a workspace or domain total is visits; a key without a type
+      // counts the whole domain.
+      const analyticsFor = (shape, interval) => {
+        const k = scale[interval] ?? 1;
+        const n = (v) => Math.round(v * k);
+        const qr = { event: 'scans', interval, qrcodeId: 'qr_demo' };
+        const qrMeta = { 'io.codeqr/analytics': { dashboardUrl: 'https://app.codeqr.io/acme/qrcodes/edit?id=qr_demo' } };
+        const wsMeta = (domain) => ({ 'io.codeqr/analytics': { dashboardUrl: `https://app.codeqr.io/acme/analytics?${domain ? `domain=${domain}&` : ''}interval=${interval}` } });
+        const card = (query, rest, meta) => ({ structuredContent: { kind: 'analytics', query, ...rest }, _meta: meta });
+        const series = interval === '24h'
+          ? Array.from({ length: 24 }, (_, i) => ({ t: new Date(Date.UTC(2026, 9, 15, i)).toISOString(), v: Math.round(4 + 3 * Math.sin(i / 3)) }))
+          : days(interval === '30d' ? 30 : 7, interval === '30d' ? 15 : 8);
+        const shapes = {
+          count: () => card({ ...qr, groupBy: 'count' }, { metric: 'scans', total: n(1234) }, qrMeta),
+          composite: () => card({ event: 'composite', groupBy: 'count', interval }, { metric: 'visits', total: n(1586), totals: { clicks: n(310), scans: n(1234), views: n(42), leads: n(12) } }, wsMeta()),
+          domain: () => card({ event: 'scans', groupBy: 'count', interval, domain: 'freeqr.ink', key: 'menu-qr' }, { metric: 'visits', total: n(1586) }, wsMeta('freeqr.ink')),
+          timeseries: () => card({ ...qr, groupBy: 'timeseries' }, { metric: 'scans', series, total: series.reduce((sum, point) => sum + point.v, 0) }, qrMeta),
+          countries: () => card({ ...qr, groupBy: 'countries' }, { metric: 'scans', total: n(812), rows: [['BR', 512], ['PT', 141], ['US', 88], ['AR', 41], ['ES', 30]].map(([c, v]) => ({ label: c, v: n(v), country: c })), more: 6 }, qrMeta),
+          top_qrcodes: () => card({ event: 'scans', groupBy: 'top_qrcodes', interval }, { metric: 'scans', rows: [['freeqr.ink/menu-qr', 402], ['freeqr.ink/wifi-qr', 133], ['freeqr.ink/event-qr', 105]].map(([label, v]) => ({ label, v: n(v) })) }, wsMeta()),
+        };
+        return shapes[shape]();
+      };
+      const fixture = params.get('fixture') || (widget === 'analytics' ? 'timeseries' : 'qr');
+      const result = widget === 'analytics' ? analyticsFor(fixture, params.get('interval') || '7d') : fixtures[fixture];
       const log = (line) => (document.getElementById('log').textContent += line + '\n');
       const send = (message) => frame.contentWindow.postMessage({ jsonrpc: '2.0', ...message }, '*');
 
@@ -55,13 +88,17 @@
         const message = event.data;
         switch (message.method) {
           case 'ui/initialize':
-            send({ id: message.id, result: { protocolVersion: message.params.protocolVersion, hostInfo: { name: 'harness', version: '1' }, hostContext: { theme, locale, displayMode: 'inline' } } });
+            send({ id: message.id, result: { protocolVersion: message.params.protocolVersion, hostInfo: { name: 'harness', version: '1' }, hostCapabilities: { serverTools: {}, openLinks: {} }, hostContext: { theme, locale, displayMode: 'inline' } } });
             break;
           case 'ui/notifications/initialized':
             send({ method: 'ui/notifications/tool-result', params: result });
             break;
           case 'ui/notifications/size-changed':
             frame.style.height = `${message.params.height}px`;
+            break;
+          case 'tools/call':
+            log(`tools/call ${JSON.stringify(message.params)}`);
+            setTimeout(() => send({ id: message.id, result: analyticsFor(fixture, message.params.arguments.interval) }), 400);
             break;
           case 'ui/open-link':
           case 'ui/message':

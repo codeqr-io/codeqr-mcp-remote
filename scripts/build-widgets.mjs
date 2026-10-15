@@ -18,6 +18,13 @@ const WIDGETS = [
     output: 'src/widgets/generated/item-card.ts',
     exportName: 'ITEM_CARD_HTML',
   },
+  {
+    name: 'analytics',
+    entry: 'web/analytics/main.ts',
+    styles: 'web/analytics/styles.css',
+    output: 'src/widgets/generated/analytics.ts',
+    exportName: 'ANALYTICS_HTML',
+  },
 ];
 
 async function bundle(entryPoint, loader) {

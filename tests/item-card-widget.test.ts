@@ -145,9 +145,12 @@ describe('widget source', () => {
     // The template's CSP lets scripts load from the image origins too, so an
     // injection through any of these would run.
     // happy-dom gives import.meta.url a non-file scheme; vitest runs from the repo root.
-    const dir = join(process.cwd(), 'web/item-card');
-    for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts'))) {
-      const source = readFileSync(join(dir, file), 'utf8');
+    const sources = readdirSync(join(process.cwd(), 'web'), { recursive: true, encoding: 'utf8' }).filter(
+      (file) => file.endsWith('.ts') && !file.startsWith(join('dev', 'out')),
+    );
+    expect(sources.length).toBeGreaterThan(4);
+    for (const file of sources) {
+      const source = readFileSync(join(process.cwd(), 'web', file), 'utf8');
       expect(source, file).not.toMatch(/\.(innerHTML|outerHTML)\b|insertAdjacentHTML\(|document\.write\(|createContextualFragment\(/);
     }
   });
@@ -314,6 +317,51 @@ describe('connect', () => {
 
     expect(notifyIntrinsicHeight).toHaveBeenCalledWith(410);
     expect(posted).toHaveLength(before);
+  });
+
+  it('calls a tool through the host once it announces serverTools', async () => {
+    const { win, posted, fromHost } = fakeWindow();
+    const host = connect(win, { name: 'codeqr-analytics', version: '1' });
+    expect(host.canCallTools()).toBe(false);
+
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, result: { hostCapabilities: { serverTools: {} } } });
+    await Promise.resolve();
+    expect(host.canCallTools()).toBe(true);
+
+    const called = host.callTool('get_analytics', { event: 'scans', interval: '7d' });
+    const request = posted.at(-1) as { id: number };
+    expect(posted.at(-1)).toMatchObject({
+      method: 'tools/call',
+      params: { name: 'get_analytics', arguments: { event: 'scans', interval: '7d' } },
+    });
+    fromHost({ jsonrpc: '2.0', id: request.id, result: { content: [], structuredContent: { kind: 'analytics' }, _meta: { a: 1 } } });
+    await expect(called).resolves.toEqual({ structuredContent: { kind: 'analytics' }, _meta: { a: 1 }, isError: false });
+  });
+
+  it('does not offer tool calls to a host that does not announce them', async () => {
+    const { win, posted, fromHost } = fakeWindow();
+    const host = connect(win, { name: 'codeqr-analytics', version: '1' });
+
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, result: { hostCapabilities: {} } });
+    await Promise.resolve();
+
+    expect(host.canCallTools()).toBe(false);
+  });
+
+  it("calls a tool through window.openai.callTool once fallen back", async () => {
+    vi.useFakeTimers();
+    const callTool = vi.fn().mockResolvedValue({ structuredContent: { kind: 'analytics' }, isError: false });
+    const { win } = fakeWindow({ toolOutput: { kind: 'analytics' }, callTool });
+    const host = connect(win, { name: 'codeqr-analytics', version: '1' });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(host.canCallTools()).toBe(true);
+    await expect(host.callTool('get_analytics', { interval: '30d' })).resolves.toMatchObject({
+      structuredContent: { kind: 'analytics' },
+      isError: false,
+    });
+    expect(callTool).toHaveBeenCalledWith('get_analytics', { interval: '30d' });
   });
 
   it("falls back to ChatGPT's window.openai when the handshake goes unanswered", async () => {

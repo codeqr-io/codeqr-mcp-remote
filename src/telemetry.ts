@@ -23,6 +23,7 @@ export type FunnelEvent =
   | 'oauth.token'
   | 'mcp.tools_list'
   | 'mcp.tool_call'
+  | 'mcp.resource_read'
   | 'mcp.rejected';
 
 export interface EventFields {
@@ -41,6 +42,8 @@ export interface EventFields {
   /** See keyHashPrefix(). */
   keyHashPrefix?: string;
   tool?: string;
+  /** URI of a resource read, e.g. the item card's template. */
+  resource?: string;
   durationMs?: number;
   status?: number;
   rpcMethod?: string;
@@ -54,7 +57,7 @@ export interface EventFields {
   hasSession?: boolean;
 }
 
-export const EVENT_FIELDS: ReadonlyArray<keyof EventFields> = [
+export const EVENT_FIELDS = [
   'outcome',
   'reason',
   'decision',
@@ -64,6 +67,7 @@ export const EVENT_FIELDS: ReadonlyArray<keyof EventFields> = [
   'redirectHost',
   'keyHashPrefix',
   'tool',
+  'resource',
   'durationMs',
   'status',
   'rpcMethod',
@@ -73,7 +77,13 @@ export const EVENT_FIELDS: ReadonlyArray<keyof EventFields> = [
   'accept',
   'protocolVersion',
   'hasSession',
-];
+] as const satisfies ReadonlyArray<keyof EventFields>;
+
+// A field added to EventFields but not to EVENT_FIELDS would be dropped by
+// pick() without a word; this fails the typecheck instead.
+type UnlistedField = Exclude<keyof EventFields, (typeof EVENT_FIELDS)[number]>;
+const everyFieldListed: [UnlistedField] extends [never] ? true : UnlistedField = true;
+void everyFieldListed;
 
 export const MAX_FIELD_LENGTH = 200;
 

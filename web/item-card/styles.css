@@ -1,0 +1,164 @@
+/* Host variables (MCP Apps theming) win when present; the fallbacks follow
+   ChatGPT's neutral palette. Brand color only on the primary button. */
+:root {
+  color-scheme: light;
+  --cq-bg: var(--color-background-primary, #ffffff);
+  --cq-soft: var(--color-background-secondary, #f4f4f4);
+  --cq-text: var(--color-text-primary, #0d0d0d);
+  --cq-muted: var(--color-text-secondary, #5d5d5d);
+  --cq-border: var(--color-border-primary, #e3e3e3);
+  --cq-accent: #1b59f5;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --cq-bg: var(--color-background-primary, #212121);
+  --cq-soft: var(--color-background-secondary, #2f2f2f);
+  --cq-text: var(--color-text-primary, #ececec);
+  --cq-muted: var(--color-text-secondary, #b4b4b4);
+  --cq-border: var(--color-border-primary, #3d3d3d);
+  --cq-accent: #4f7df7;
+}
+
+body {
+  margin: 0;
+  background: var(--cq-bg);
+  color: var(--cq-text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.card {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* A QR code needs a light quiet zone to scan from a screen, in dark mode too. */
+.qr {
+  flex: none;
+  width: 132px;
+  height: 132px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #ffffff;
+  object-fit: contain;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cq-soft);
+  color: var(--cq-muted);
+  font-size: 12px;
+}
+
+.badge.dynamic {
+  color: var(--cq-text);
+}
+
+.destination,
+.short {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destination {
+  margin: 0;
+  color: var(--cq-muted);
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.short {
+  font-weight: 500;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat .label {
+  color: var(--cq-muted);
+  font-size: 12px;
+}
+
+.stat .value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+button {
+  padding: 8px 14px;
+  border: 1px solid var(--cq-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cq-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+button.copy {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+button.primary {
+  border-color: transparent;
+  background: var(--cq-accent);
+  color: #ffffff;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--cq-accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 420px) {
+  .card {
+    flex-direction: column;
+  }
+
+  .qr {
+    align-self: center;
+    width: 160px;
+    height: 160px;
+  }
+}

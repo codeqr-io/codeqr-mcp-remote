@@ -56,8 +56,8 @@
         v: Math.round(20 + 15 * Math.sin(i / 1.7) + i * 2),
       }));
       // Shaped as src/analytics-card.ts builds them: a QR code's numbers are
-      // scans; a workspace or domain total is visits; a key without a type
-      // counts the whole domain.
+      // scans; a composite workspace total is visits; a domain and key are
+      // resolved to the code they name.
       const analyticsFor = (shape, interval) => {
         const k = scale[interval] ?? 1;
         const n = (v) => Math.round(v * k);
@@ -71,7 +71,7 @@
         const shapes = {
           count: () => card({ ...qr, groupBy: 'count' }, { metric: 'scans', total: n(1234) }, qrMeta),
           composite: () => card({ event: 'composite', groupBy: 'count', interval }, { metric: 'visits', total: n(1586), totals: { clicks: n(310), scans: n(1234), views: n(42), leads: n(12) } }, wsMeta()),
-          domain: () => card({ event: 'scans', groupBy: 'count', interval, domain: 'freeqr.ink', key: 'menu-qr' }, { metric: 'visits', total: n(1586) }, wsMeta('freeqr.ink')),
+          domain: () => card({ event: 'scans', groupBy: 'count', interval, qrcodeId: 'qr_demo', domain: 'freeqr.ink', key: 'menu-qr' }, { metric: 'scans', total: n(203) }, qrMeta),
           timeseries: () => card({ ...qr, groupBy: 'timeseries' }, { metric: 'scans', series, total: series.reduce((sum, point) => sum + point.v, 0) }, qrMeta),
           countries: () => card({ ...qr, groupBy: 'countries' }, { metric: 'scans', total: n(812), rows: [['BR', 512], ['PT', 141], ['US', 88], ['AR', 41], ['ES', 30]].map(([c, v]) => ({ label: c, v: n(v), country: c })), more: 6 }, qrMeta),
           top_qrcodes: () => card({ event: 'scans', groupBy: 'top_qrcodes', interval }, { metric: 'scans', rows: [['freeqr.ink/menu-qr', 402], ['freeqr.ink/wifi-qr', 133], ['freeqr.ink/event-qr', 105]].map(([label, v]) => ({ label, v: n(v) })) }, wsMeta()),

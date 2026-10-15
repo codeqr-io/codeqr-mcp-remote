@@ -83,8 +83,8 @@ export function buildAnalyticsCard(
 
   if (groupBy === 'count') {
     if (!isRecord(result)) return undefined;
-    const metric = metricOf(event, scope, groupBy, isSplit(result));
-    const card: AnalyticsCard = { kind: 'analytics', query, metric, total: valueOf(result, metric, scope) };
+    const metric = metricOf(event, scope, groupBy);
+    const card: AnalyticsCard = { kind: 'analytics', query, metric, total: valueOf(result, metric, groupBy) };
     if (event === 'composite') {
       const totals: Partial<Record<Metric, number>> = {};
       for (const each of SPLIT) {
@@ -99,21 +99,21 @@ export function buildAnalyticsCard(
   if (groupBy === 'timeseries') {
     if (!Array.isArray(result)) return undefined;
     const points = result.filter(isRecord);
-    const metric = metricOf(event, scope, groupBy, points.some(isSplit));
-    const series = points.map((point) => ({ t: text(point.start) ?? '', v: valueOf(point, metric, scope) }));
+    const metric = metricOf(event, scope, groupBy);
+    const series = points.map((point) => ({ t: text(point.start) ?? '', v: valueOf(point, metric, groupBy) }));
     const total = series.reduce((sum, point) => sum + point.v, 0);
     return withMeta({ kind: 'analytics', query, metric, total, series }, slug, appUrl);
   }
 
   const label = ROW_LABEL[groupBy];
   if (!label || !Array.isArray(result)) return undefined;
-  const metric = metricOf(event, scope, groupBy, false);
+  const metric = metricOf(event, scope, groupBy);
   const rows = result
     .filter(isRecord)
     .map((row) => {
       const name = label(row);
       if (!name) return undefined;
-      const entry: AnalyticsRow = { label: name, v: valueOf(row, metric, scope) };
+      const entry: AnalyticsRow = { label: name, v: valueOf(row, metric, groupBy) };
       const country = text(row.country);
       if ((groupBy === 'countries' || groupBy === 'cities') && country) entry.country = country;
       return entry;
@@ -135,20 +135,17 @@ function withMeta(card: AnalyticsCard, slug: string | undefined, appUrl: string)
 }
 
 /**
- * What the API's numbers actually count, which is not always the event asked
- * for (app lib/analytics/get-analytics.ts and the Tinybird pipes):
- * - a QR code's traffic is scans whatever the event, and a link's is clicks;
- * - `scans` without a QR code id runs the composite query, so it is every
- *   click event of the workspace or domain;
- * - only counts and timeseries asked as `clicks` or `composite` come back
- *   split into clicks (links), scans (QR codes) and views (pages);
- * - top_links are links and top_qrcodes are QR codes.
+ * What the numbers count. get_analytics sends resolveAnalyticsQuery's request
+ * (analytics-query.ts): a code by id, or "scans" and "clicks" over the
+ * workspace filtered to QR codes or links, so the event asked for holds.
+ * Only a composite query over the workspace counts every kind together.
  */
-function metricOf(event: string, scope: 'qrcode' | 'link' | 'all', groupBy: string, split: boolean): Metric {
+function metricOf(event: string, scope: 'qrcode' | 'link' | 'all', groupBy: string): Metric {
   if (event === 'leads' || event === 'sales') return event;
-  if (scope === 'qrcode' || groupBy === 'top_qrcodes') return 'scans';
-  if (scope === 'link' || groupBy === 'top_links') return 'clicks';
-  if (event === 'clicks' && split) return 'clicks';
+  if (scope === 'qrcode') return 'scans';
+  if (scope === 'link') return 'clicks';
+  if (groupBy === 'top_qrcodes' || event === 'scans') return 'scans';
+  if (groupBy === 'top_links' || event === 'clicks') return 'clicks';
   return 'visits';
 }
 
@@ -157,12 +154,17 @@ function isSplit(row: Record<string, unknown>): boolean {
 }
 
 /**
- * The API moves a QR code's traffic from `clicks` to `scans` only in counts
- * and timeseries; its breakdowns keep it in `clicks`. Split visits add the
- * three kinds back up.
+ * Counts and timeseries carry scans in `scans`: the API moves a QR code's
+ * traffic there, and splits workspace traffic by kind. Breakdowns, filtered
+ * to one QR code or to QR codes, keep it in `clicks`; top_qrcodes names it
+ * `scans`. Split visits add the three kinds back up.
  */
-function valueOf(row: Record<string, unknown>, metric: Metric, scope: 'qrcode' | 'link' | 'all'): number {
-  if (metric === 'scans') return scope === 'qrcode' ? number(row.scans) || number(row.clicks) : number(row.scans);
+function valueOf(row: Record<string, unknown>, metric: Metric, groupBy: string): number {
+  if (metric === 'scans') {
+    return groupBy === 'count' || groupBy === 'timeseries' || groupBy === 'top_qrcodes'
+      ? number(row.scans)
+      : number(row.clicks);
+  }
   if (metric === 'visits') return isSplit(row) ? number(row.clicks) + number(row.scans) + number(row.views) : number(row.clicks);
   return number(row[metric]);
 }

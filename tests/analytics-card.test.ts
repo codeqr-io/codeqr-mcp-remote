@@ -42,16 +42,25 @@ describe('buildAnalyticsCard', () => {
     });
   });
 
-  it('calls all traffic visits where the API cannot split it, never scans', () => {
-    // Without a QR code id, "scans" runs the composite query: every click
-    // event of the workspace, links and pages included, lands in `clicks`.
-    expect(card({ event: 'scans', groupBy: 'count' }, { clicks: 500, leads: 0, sales: 0 })).toMatchObject({
-      metric: 'visits',
-      total: 500,
+  it('counts scans over the workspace from the split the type-filtered request brings back', () => {
+    // resolveAnalyticsQuery asks for QR code traffic (`types: qrcode`); counts
+    // and timeseries come back split, so the scans are in `scans`.
+    expect(card({ event: 'scans', groupBy: 'count' }, { clicks: 1130, scans: 203, views: 0 })).toMatchObject({
+      metric: 'scans',
+      total: 203,
     });
-    expect(card({ event: 'clicks', groupBy: 'devices' }, [{ device: 'Mobile', clicks: 30 }])).toMatchObject({
-      metric: 'visits',
+    // Never the clicks: a workspace with link clicks and no scans has 0 scans.
+    expect(card({ event: 'scans', groupBy: 'count' }, { clicks: 500, scans: 0 })).toMatchObject({ metric: 'scans', total: 0 });
+  });
+
+  it('reads type-filtered breakdowns from `clicks`, as scans or link clicks', () => {
+    expect(card({ event: 'scans', groupBy: 'devices' }, [{ device: 'Mobile', clicks: 30 }])).toMatchObject({
+      metric: 'scans',
       total: 30,
+    });
+    expect(card({ event: 'clicks', groupBy: 'devices' }, [{ device: 'Mobile', clicks: 12 }])).toMatchObject({
+      metric: 'clicks',
+      total: 12,
     });
   });
 

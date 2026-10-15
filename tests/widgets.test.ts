@@ -122,7 +122,25 @@ describe('resources over /mcp', () => {
     return JSON.parse(data?.slice('data: '.length) ?? 'null');
   }
 
+  it('declares resources in the handshake only while the card is switched on', async () => {
+    const initialize = { method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } } };
+
+    const off = await rpc(initialize);
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    const on = await rpc(initialize);
+
+    expect(off.result.capabilities).not.toHaveProperty('resources');
+    expect(on.result.capabilities).toHaveProperty('resources');
+  });
+
+  it('answers resources/read as an unknown method while the card is off', async () => {
+    const answer = await rpc({ method: 'resources/read', params: { uri: ITEM_CARD_URI } });
+
+    expect(answer.error?.code).toBe(-32601);
+  });
+
   it('reads the item card template and logs the read without calling CodeQR', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     const answer = await rpc({ method: 'resources/read', params: { uri: ITEM_CARD_URI } });
@@ -138,18 +156,20 @@ describe('resources over /mcp', () => {
   });
 
   it('answers an unknown resource with an error and logs it', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
     const answer = await rpc({ method: 'resources/read', params: { uri: 'ui://codeqr/missing.html' } });
 
     expect(answer.error).toBeDefined();
     expect(lines.find((line) => line.event === 'mcp.resource_read')).toMatchObject({ outcome: 'error' });
   });
 
-  it('lists the template only while the card is switched on', async () => {
-    const off = await rpc({ method: 'resources/list', params: {} });
+  it('lists the template, and no resource templates, while the card is switched on', async () => {
     vi.stubEnv('MCP_UI_ENABLED', '1');
-    const on = await rpc({ method: 'resources/list', params: {} });
 
-    expect(off.result.resources).toEqual([]);
-    expect(on.result.resources.map((resource: { uri: string }) => resource.uri)).toEqual([ITEM_CARD_URI]);
+    const listed = await rpc({ method: 'resources/list', params: {} });
+    const templates = await rpc({ method: 'resources/templates/list', params: {} });
+
+    expect(listed.result.resources.map((resource: { uri: string }) => resource.uri)).toEqual([ITEM_CARD_URI]);
+    expect(templates.result.resourceTemplates).toEqual([]);
   });
 });

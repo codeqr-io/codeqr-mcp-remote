@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { connect, PROTOCOL_VERSION, type BridgeWindow } from '../web/item-card/bridge.js';
 import { LOCALES, resolveLocale, stringsFor } from '../web/item-card/i18n.js';
@@ -44,9 +46,9 @@ describe('toCardView', () => {
     expect(toCardView(undefined)).toBeNull();
   });
 
-  it('drops an image from an unexpected origin, a non-https link and a bad count', () => {
+  it('drops a non-https image or link and a bad count', () => {
     const view = toCardView(
-      qrResult({ scans: -1 }, { imageUrl: 'https://tracker.example/pixel.png', editUrl: 'javascript:alert(1)' }) as never,
+      qrResult({ scans: -1 }, { imageUrl: 'http://res.cloudinary.com/x.png', editUrl: 'javascript:alert(1)' }) as never,
     );
 
     expect(view?.imageUrl).toBeUndefined();
@@ -135,6 +137,19 @@ describe('renderCard', () => {
     (root.querySelector('button.copy') as HTMLButtonElement).click();
     await Promise.resolve();
     expect(actions.copy).toHaveBeenCalledWith('https://freeqr.ink/abc-qr');
+  });
+});
+
+describe('widget source', () => {
+  it('never builds markup from a string', () => {
+    // The template's CSP lets scripts load from the image origins too, so an
+    // injection through any of these would run.
+    // happy-dom gives import.meta.url a non-file scheme; vitest runs from the repo root.
+    const dir = join(process.cwd(), 'web/item-card');
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.ts'))) {
+      const source = readFileSync(join(dir, file), 'utf8');
+      expect(source, file).not.toMatch(/\.(innerHTML|outerHTML)\b|insertAdjacentHTML\(|document\.write\(|createContextualFragment\(/);
+    }
   });
 });
 
@@ -238,6 +253,67 @@ describe('connect', () => {
 
     fromHost({ jsonrpc: '2.0', id: 99, method: 'ping' });
     expect(posted.at(-1)).toEqual({ jsonrpc: '2.0', id: 99, result: {} });
+  });
+
+  it('stays on MCP Apps when the host answers, even with window.openai present', async () => {
+    vi.useFakeTimers();
+    const openExternal = vi.fn();
+    const { win, posted, fromHost } = fakeWindow({ toolOutput: qrResult().structuredContent, openExternal });
+    const host = connect(win, { name: 'codeqr-item-card', version: '1' });
+    const onResult = vi.fn();
+    host.onToolResult(onResult);
+
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, result: { hostContext: {} } });
+    await vi.advanceTimersByTimeAsync(5_000);
+    void host.openLink(EDIT);
+
+    expect(onResult).not.toHaveBeenCalled();
+    expect(openExternal).not.toHaveBeenCalled();
+    expect(posted.at(-1)).toMatchObject({ method: 'ui/open-link' });
+  });
+
+  it('ignores a handshake answer that arrives after falling back, so the card renders once', async () => {
+    vi.useFakeTimers();
+    const result = qrResult();
+    const { win, posted, fromHost } = fakeWindow({ toolOutput: result.structuredContent, toolResponseMetadata: result._meta });
+    const host = connect(win, { name: 'codeqr-item-card', version: '1' });
+    const onResult = vi.fn();
+    host.onToolResult(onResult);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, result: { hostContext: {} } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onResult).toHaveBeenCalledTimes(1);
+    expect(posted.some((message) => message.method === 'ui/notifications/initialized')).toBe(false);
+  });
+
+  it('falls back at once when the host rejects the handshake', async () => {
+    const result = qrResult();
+    const { win, posted, fromHost } = fakeWindow({ toolOutput: result.structuredContent, toolResponseMetadata: result._meta });
+    const host = connect(win, { name: 'codeqr-item-card', version: '1' });
+    const onResult = vi.fn();
+    host.onToolResult(onResult);
+
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, error: { code: -32601, message: 'Method not found' } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports its height to window.openai once fallen back', async () => {
+    vi.useFakeTimers();
+    const notifyIntrinsicHeight = vi.fn();
+    const { win, posted } = fakeWindow({ toolOutput: qrResult().structuredContent, notifyIntrinsicHeight });
+    const host = connect(win, { name: 'codeqr-item-card', version: '1' });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    const before = posted.length;
+    host.reportSize(375, 410);
+
+    expect(notifyIntrinsicHeight).toHaveBeenCalledWith(410);
+    expect(posted).toHaveLength(before);
   });
 
   it("falls back to ChatGPT's window.openai when the handshake goes unanswered", async () => {

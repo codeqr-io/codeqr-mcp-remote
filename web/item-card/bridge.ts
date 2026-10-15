@@ -40,6 +40,7 @@ interface OpenAiGlobals {
   locale?: string;
   openExternal?: (options: { href: string }) => unknown;
   sendFollowUpMessage?: (options: { prompt: string }) => unknown;
+  notifyIntrinsicHeight?: (height: number) => unknown;
 }
 
 /** The parts of `window` the bridge touches, so tests can pass a fake. */
@@ -174,7 +175,18 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
       await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
     },
     reportSize(width, height) {
-      if (!useOpenAi) post({ method: 'ui/notifications/size-changed', params: { width, height } });
+      if (!useOpenAi) {
+        post({ method: 'ui/notifications/size-changed', params: { width, height } });
+        return;
+      }
+      // Documented without a signature ("report dynamic widget heights"), so
+      // this is best effort: the card is short, and the standard path above is
+      // the one hosts that speak MCP Apps use.
+      try {
+        win.openai?.notifyIntrinsicHeight?.(height);
+      } catch {
+        // an older ChatGPT without it, or a different signature
+      }
     },
   };
 }

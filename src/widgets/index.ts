@@ -64,6 +64,8 @@ export function readWidget(uri: string) {
   if (uri !== ITEM_CARD_URI) return undefined;
   const apiOrigin = new URL(config.codeqrApiUrl).origin;
   const appOrigin = new URL(config.codeqrAppUrl).origin;
+  // Hosts apply these to scripts as well as images, which is why the page
+  // never turns a string into markup (web/item-card/render.ts).
   const resourceDomains = [STORED_IMAGE_ORIGIN, apiOrigin];
 
   return {

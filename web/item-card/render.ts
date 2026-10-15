@@ -1,18 +1,19 @@
 /**
  * Turns a tool result into the card. Everything in the result is treated as
  * untrusted: fields are type-checked, text only ever goes through textContent,
- * and images and links are taken only from the origins the card expects.
+ * and only https URLs are used. Which origins images may come from is the
+ * host's to enforce, through the CSP the server declares with the template
+ * (src/widgets/index.ts), which follows the server's own configuration.
+ *
+ * Never build markup from a string here (innerHTML and friends): that CSP lets
+ * scripts load from the image origins too, Cloudinary included, so an
+ * injection would run. tests/item-card-widget.test.ts fails if one appears.
  */
 
 import type { ToolResult } from './bridge.js';
 import { fill, type Strings } from './i18n.js';
 
 export const CARD_META_KEY = 'io.codeqr/card';
-
-// Production and staging API, plus Cloudinary, where QR code designs are
-// stored. The host's CSP enforces its own list too; this one keeps a bad
-// value from even being requested.
-const IMAGE_HOSTS = new Set(['res.cloudinary.com', 'api.codeqr.io', 'api-dev.codeqr.io']);
 
 type QrType = keyof Strings['types'];
 
@@ -46,7 +47,6 @@ export function toCardView(result: ToolResult | undefined): CardView | null {
   if ((kind !== 'qrcode' && kind !== 'link') || !shortLink) return null;
 
   const meta = asRecord(asRecord(result._meta)?.[CARD_META_KEY]);
-  const imageUrl = httpsUrl(meta?.imageUrl);
   const count = kind === 'qrcode' ? content.scans : content.clicks;
 
   return {
@@ -58,7 +58,7 @@ export function toCardView(result: ToolResult | undefined): CardView | null {
     archived: content.archived === true,
     destination: text(content.destination),
     count: typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : undefined,
-    imageUrl: imageUrl && IMAGE_HOSTS.has(new URL(imageUrl).hostname) ? imageUrl : undefined,
+    imageUrl: httpsUrl(meta?.imageUrl),
     editUrl: httpsUrl(meta?.editUrl),
   };
 }

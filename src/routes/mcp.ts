@@ -11,6 +11,7 @@ import {
   CallToolRequestSchema,
   ErrorCode,
   ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
   McpError,
   ReadResourceRequestSchema,
@@ -864,12 +865,14 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   // The version is this server's, from package.json. It used to carry the
   // `@codeqr/ts` version instead, which clients read as the server's own and
   // report in diagnostics.
+  const uiEnabled = isUiEnabled();
   const server = new McpServer(
     { name: 'codeqr', version: SERVER_VERSION },
     {
       instructions: SERVER_INSTRUCTIONS,
-      // `resources` serves the item card's template (widgets/index.ts).
-      capabilities: { tools: {}, resources: {} },
+      // `resources` serves the item card's template (widgets/index.ts), and
+      // is declared only while the card is on: off, the handshake is what it was.
+      capabilities: uiEnabled ? { tools: {}, resources: {} } : { tools: {} },
     },
   );
 
@@ -884,25 +887,25 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
     return { tools: withWidgetMeta(TOOLS) };
   });
 
-  // No CodeQR call here, on purpose: a host may fetch the template before any
-  // tool runs, and the workspace lookup would record a first use that never
-  // happened (InstalledIntegration.firstUsedAt).
-  innerServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: isUiEnabled() ? WIDGET_RESOURCES : [],
-  }));
-
-  innerServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const { uri } = request.params;
-    const widget = readWidget(uri);
-    logEvent('mcp.resource_read', {
-      clientId: req.oauthClientId,
-      keyHashPrefix: req.keyHashPrefix,
-      resource: uri,
-      outcome: widget ? 'ok' : 'error',
+  // No CodeQR call in these, on purpose: a host may fetch the template before
+  // any tool runs, and the workspace lookup would record a first use that
+  // never happened (InstalledIntegration.firstUsedAt).
+  if (uiEnabled) {
+    innerServer.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: WIDGET_RESOURCES }));
+    innerServer.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({ resourceTemplates: [] }));
+    innerServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const { uri } = request.params;
+      const widget = readWidget(uri);
+      logEvent('mcp.resource_read', {
+        clientId: req.oauthClientId,
+        keyHashPrefix: req.keyHashPrefix,
+        resource: uri,
+        outcome: widget ? 'ok' : 'error',
+      });
+      if (!widget) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+      return widget;
     });
-    if (!widget) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
-    return widget;
-  });
+  }
 
   innerServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;

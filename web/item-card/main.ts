@@ -1,4 +1,4 @@
-import { connect, type BridgeWindow, type HostContext, type ToolResult } from './bridge.js';
+import { connect, type BridgeWindow, type HostContext, type ToolResult } from '../shared/bridge.js';
 import { resolveLocale, stringsFor } from './i18n.js';
 import { renderCard, toCardView } from './render.js';
 

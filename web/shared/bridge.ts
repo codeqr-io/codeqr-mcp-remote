@@ -31,6 +31,10 @@ export interface Host {
   openLink(url: string): Promise<void>;
   sendMessage(text: string): Promise<void>;
   reportSize(width: number, height: number): void;
+  /** Whether the host proxies tool calls from the widget; known only once the handshake has settled. */
+  canCallTools(): boolean;
+  /** Calls a tool on this server through the host, without a new message in the conversation. */
+  callTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
 }
 
 interface OpenAiGlobals {
@@ -41,6 +45,7 @@ interface OpenAiGlobals {
   openExternal?: (options: { href: string }) => unknown;
   sendFollowUpMessage?: (options: { prompt: string }) => unknown;
   notifyIntrinsicHeight?: (height: number) => unknown;
+  callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
 }
 
 /** The parts of `window` the bridge touches, so tests can pass a fake. */
@@ -59,6 +64,7 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
   let context: HostContext = {};
   let lastResult: ToolResult | undefined;
   let useOpenAi = false;
+  let serverTools = false;
   let nextId = 1;
   const pending = new Map<number, Pending>();
 
@@ -140,7 +146,9 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
     (answer) => {
       if (useOpenAi) return;
       initialized = true;
-      updateContext(((answer as { hostContext?: HostContext })?.hostContext ?? {}) as HostContext);
+      const result = (answer ?? {}) as { hostContext?: HostContext; hostCapabilities?: { serverTools?: unknown } };
+      serverTools = Boolean(result.hostCapabilities?.serverTools);
+      updateContext(result.hostContext ?? {});
       post({ method: 'ui/notifications/initialized' });
     },
     () => fallBackToOpenAi(),
@@ -173,6 +181,22 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
         return;
       }
       await request('ui/message', { role: 'user', content: [{ type: 'text', text }] });
+    },
+    canCallTools() {
+      return useOpenAi ? typeof win.openai?.callTool === 'function' : serverTools;
+    },
+    async callTool(name, args) {
+      const answer = useOpenAi
+        ? await win.openai?.callTool?.(name, args)
+        : await request('tools/call', { name, arguments: args });
+      // ChatGPT's own callTool is documented only as "mirrors model-initiated
+      // calls", so only the fields of a CallToolResult are kept, whatever wraps them.
+      const result = (answer ?? {}) as Record<string, unknown>;
+      return {
+        structuredContent: result.structuredContent,
+        _meta: (result._meta ?? undefined) as Record<string, unknown> | undefined,
+        isError: result.isError === true,
+      };
     },
     reportSize(width, height) {
       if (!useOpenAi) {

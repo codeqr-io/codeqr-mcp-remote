@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connect, PROTOCOL_VERSION, type BridgeWindow } from '../web/item-card/bridge.js';
+import { connect, PROTOCOL_VERSION, type BridgeWindow } from '../web/shared/bridge.js';
 import { LOCALES, resolveLocale, stringsFor } from '../web/item-card/i18n.js';
 import { CARD_META_KEY, renderCard, toCardView, type CardActions } from '../web/item-card/render.js';
 

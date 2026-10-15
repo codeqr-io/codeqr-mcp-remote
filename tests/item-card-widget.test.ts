@@ -100,12 +100,21 @@ describe('renderCard', () => {
     expect(root.querySelector('img')).toBeNull();
   });
 
+  it('names an untitled code by where it leads, without repeating the destination', () => {
+    const { root } = render(qrResult({ title: null }));
+
+    expect(root.querySelector('.title')?.textContent).toBe('example.com/menu');
+    expect(root.querySelector('.destination')).toBeNull();
+    expect(root.querySelector('.short')?.textContent).toBe('freeqr.ink/abc-qr');
+  });
+
   it('describes a link with clicks', () => {
     const { root, actions } = render({
       structuredContent: { kind: 'link', id: 'l', shortLink: 'https://cqr.ink/launch', title: null, isStatic: false, archived: false, clicks: 7 },
     });
 
     expect(root.querySelector('.title')?.textContent).toBe('cqr.ink/launch');
+    expect(root.querySelector('.short')?.textContent).toBe('cqr.ink/launch');
     expect(root.querySelector('.stat .label')?.textContent).toBe('Clicks');
     buttons(root)[0].click();
     expect(actions.sendMessage).toHaveBeenCalledWith('How many clicks has cqr.ink/launch had in the last 30 days?');

@@ -84,17 +84,20 @@ export function renderCard(
     card.append(image);
   }
 
+  const typeLabel = view.kind === 'qrcode' && view.type && view.type !== 'url' ? typeName(view.type, strings) : undefined;
+  const destination = view.destination ? withoutScheme(view.destination) : undefined;
+
+  // Without a title, what the code leads to names it best; the short link has its own line below.
   const body = el('div', 'body');
-  body.append(el('h2', 'title', view.title ?? shown));
+  body.append(el('h2', 'title', view.title ?? destination ?? typeLabel ?? shown));
 
   const badges = el('div', 'badges');
   badges.append(el('span', view.isStatic ? 'badge' : 'badge dynamic', view.isStatic ? strings.static : strings.dynamic));
-  const typeLabel = view.kind === 'qrcode' && view.type && view.type !== 'url' ? typeName(view.type, strings) : undefined;
   if (typeLabel) badges.append(el('span', 'badge', typeLabel));
   if (view.archived) badges.append(el('span', 'badge', strings.archived));
   body.append(badges);
 
-  if (view.destination) body.append(el('p', 'destination', withoutScheme(view.destination)));
+  if (view.title && destination) body.append(el('p', 'destination', destination));
 
   const link = el('div', 'link');
   link.append(el('span', 'short', shown));

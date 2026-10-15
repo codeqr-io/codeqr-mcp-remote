@@ -9,7 +9,7 @@ process.env.CODEQR_OAUTH_CLIENT_SECRET = 'secret_test';
 process.env.VERCEL = '1';
 
 const { TOOLS } = await import('../src/routes/mcp.js');
-const { ITEM_CARD_URI, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } = await import('../src/widgets/index.js');
+const { ITEM_CARD_URI, WIDGET_DESCRIPTION, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } = await import('../src/widgets/index.js');
 const { createAccessToken } = await import('../src/oauth/store.js');
 const indexApp = (await import('../src/index.js')).default;
 
@@ -60,6 +60,14 @@ describe('readWidget', () => {
     });
     expect(content._meta['openai/widgetCSP']).toMatchObject({ redirect_domains: ['https://app.example.test'] });
     expect(content._meta['openai/widgetDescription']).not.toMatch(SELLING);
+  });
+
+  it('tells ChatGPT not to render the result again under the card', () => {
+    const [content] = readWidget(ITEM_CARD_URI)?.contents ?? [];
+
+    expect(content._meta['openai/widgetDescription']).toBe(WIDGET_DESCRIPTION);
+    expect(WIDGET_DESCRIPTION).toMatch(/Do not show the QR image, the short link, the destination or the CodeQR link again/);
+    expect(WIDGET_DESCRIPTION).toMatch(/do not build another card/);
   });
 
   it('leaves the host-specific ui.domain out', () => {

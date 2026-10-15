@@ -14,6 +14,7 @@
  *   CODEQR_OAUTH_CLIENT_SECRET - its client_secret (this server is a confidential client)
  *   AXIOM_TOKEN              - Optional; Axiom ingest token. Funnel events (telemetry.ts) are sent to Axiom only when set
  *   AXIOM_DATASET            - Optional; Axiom dataset for those events (default: codeqr, the one the app logs to)
+ *   MCP_UI_ENABLED           - Optional; set to 1 to return the item card's data (item-card.ts) from the tools that show one
  */
 
 import type { Request } from 'express';
@@ -44,6 +45,15 @@ export const config = {
   codeqrOAuthClientId: process.env.CODEQR_OAUTH_CLIENT_ID || '',
   codeqrOAuthClientSecret: process.env.CODEQR_OAUTH_CLIENT_SECRET || '',
 };
+
+/**
+ * Whether tools return the item card's data. Read on every call, like the
+ * Axiom token in telemetry.ts: the card is switched on or off with an
+ * environment variable and a redeploy, and stays off wherever it is unset.
+ */
+export function isUiEnabled(): boolean {
+  return process.env.MCP_UI_ENABLED === '1';
+}
 
 /**
  * Scopes requested from CodeQR on the user's behalf.

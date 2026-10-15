@@ -153,3 +153,90 @@ describe('handleToolCall create note', () => {
     expect(mockGetWorkspace).not.toHaveBeenCalled();
   });
 });
+
+describe('handleToolCall item card', () => {
+  const ITEM_CARD_META_KEY = 'io.codeqr/card';
+  const qr = { id: created.id, domain: created.domain, key: created.key, type: 'url', url: 'https://example.com', static: false, scans: 3 };
+  const link = { id: 'link_1', domain: 'cqr.ink', key: 'launch', url: 'https://example.com', clicks: 5 };
+  const stub = () => ({
+    qrcodes: {
+      create: vi.fn().mockResolvedValue(qr),
+      update: vi.fn().mockResolvedValue(qr),
+      list: vi.fn().mockResolvedValue([qr]),
+    },
+    links: {
+      create: vi.fn().mockResolvedValue(link),
+      update: vi.fn().mockResolvedValue(link),
+      retrieveInfo: vi.fn().mockResolvedValue(link),
+    },
+  });
+
+  afterEach(() => {
+    mockGetWorkspace.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns exactly what it returned before while MCP_UI_ENABLED is unset', async () => {
+    mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
+
+    const createdQr = await handleToolCall(stub() as never, 'key', 'create_qrcode', {});
+    const info = await handleToolCall(stub() as never, 'key', 'get_link_info', { linkId: 'link_1' });
+
+    expect(Object.keys(createdQr).sort()).toEqual(['content']);
+    expect(Object.keys(info).sort()).toEqual(['content']);
+    expect(mockGetWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the card to create_qrcode with a single workspace lookup shared with the note', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
+
+    const result = await handleToolCall(stub() as never, 'key', 'create_qrcode', {});
+
+    expect(result.content).toHaveLength(2);
+    expect(result.content[0].text).toBe(JSON.stringify(qr, null, 2));
+    expect(result.structuredContent).toMatchObject({ kind: 'qrcode', id: created.id, scans: 3 });
+    expect(result._meta?.[ITEM_CARD_META_KEY]).toMatchObject({
+      editUrl: `${config.codeqrAppUrl}/acme/qrcodes/edit?id=${created.id}&showDownload=true`,
+    });
+    expect(mockGetWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the card, but no note, to the update and info tools', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
+
+    const calls = [
+      ['update_qrcode', { qrcodeId: created.id }, 'qrcode'],
+      ['update_link', { linkId: 'link_1' }, 'link'],
+      ['get_link_info', { linkId: 'link_1' }, 'link'],
+    ] as const;
+    for (const [name, args, kind] of calls) {
+      const result = await handleToolCall(stub() as never, 'key', name, args);
+      expect(result.content, name).toHaveLength(1);
+      expect(result.structuredContent, name).toMatchObject({ kind });
+    }
+    expect(mockGetWorkspace).toHaveBeenCalledTimes(calls.length);
+  });
+
+  it('adds nothing to list tools or to a response without id, domain and key', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    const bare = { qrcodes: { update: vi.fn().mockResolvedValue({ id: 'qr_2' }) } };
+
+    const listed = await handleToolCall(stub() as never, 'key', 'list_qrcodes', {});
+    const updated = await handleToolCall(bare as never, 'key', 'update_qrcode', { qrcodeId: 'qr_2' });
+
+    expect(listed.structuredContent).toBeUndefined();
+    expect(updated.structuredContent).toBeUndefined();
+    expect(mockGetWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('still shows the card, opening the dashboard home, when the workspace cannot be read', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    mockGetWorkspace.mockRejectedValue(new Error('CodeQR unreachable'));
+
+    const result = await handleToolCall(stub() as never, 'key', 'get_link_info', { linkId: 'link_1' });
+
+    expect(result._meta?.[ITEM_CARD_META_KEY]).toMatchObject({ editUrl: config.codeqrAppUrl });
+  });
+});

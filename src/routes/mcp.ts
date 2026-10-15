@@ -11,7 +11,8 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
-import { config, SERVER_VERSION } from '../config.js';
+import { config, isUiEnabled, SERVER_VERSION } from '../config.js';
+import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
@@ -704,6 +705,13 @@ function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
 }
 
+export interface ToolResult {
+  content: Array<{ type: 'text'; text: string }>;
+  structuredContent?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
+  isError?: boolean;
+}
+
 /** How a tool call ended, for telemetry; never sent to the client. */
 export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
 
@@ -719,7 +727,7 @@ export async function handleToolCall(
   name: string,
   args: Record<string, unknown>,
   onOutcome?: (outcome: ToolOutcome) => void,
-): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+): Promise<ToolResult> {
   try {
     let result: unknown;
 
@@ -813,12 +821,7 @@ export async function handleToolCall(
     }
 
     onOutcome?.('ok');
-    const content: Array<{ type: 'text'; text: string }> = [
-      { type: 'text', text: JSON.stringify(result, null, 2) },
-    ];
-    const note = await createdNote(name, result, apiKey);
-    if (note) content.push({ type: 'text', text: note });
-    return { content };
+    return await withCreatedNoteAndCard(name, result, apiKey);
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
     // one point rather than per tool. The `Error:` prefix is kept for every
@@ -935,16 +938,34 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 }
 
 /**
- * Only the two create tools get the note. The workspace slug is one extra
- * call to CodeQR; when it fails the dashboard line is left out rather than
- * failing a code that was already created.
+ * The JSON of the result, plus the note after a create and the item card's
+ * data where the card is switched on. Both need the workspace slug, which is
+ * one extra call to CodeQR, so it is looked up once for the two; when the
+ * lookup fails the dashboard line and the card's dashboard link fall back
+ * rather than failing a call that already succeeded.
  */
-async function createdNote(name: string, result: unknown, apiKey: string): Promise<string | undefined> {
-  if (name !== 'create_qrcode' && name !== 'create_link') return undefined;
+async function withCreatedNoteAndCard(name: string, result: unknown, apiKey: string): Promise<ToolResult> {
+  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result, null, 2) }];
   const created = asCreatedResource(result);
-  if (!created) return undefined;
+  const isCreate = name === 'create_qrcode' || name === 'create_link';
+  const cardTool = isUiEnabled() && isItemCardTool(name) ? name : undefined;
+  if (!created || (!isCreate && !cardTool)) return { content };
 
-  const workspaceSlug = await Promise.race([
+  const workspaceSlug = await lookupWorkspaceSlug(apiKey);
+  const urls = { appUrl: config.codeqrAppUrl, apiUrl: config.codeqrApiUrl };
+
+  if (isCreate) {
+    content.push({
+      type: 'text',
+      text: nextStepsText({ kind: name === 'create_qrcode' ? 'qrcode' : 'link', created, workspaceSlug, ...urls }),
+    });
+  }
+  const card = cardTool && buildItemCard(itemCardKind(cardTool), result, { slug: workspaceSlug, ...urls });
+  return card ? { content, structuredContent: card.structuredContent, _meta: card.meta } : { content };
+}
+
+async function lookupWorkspaceSlug(apiKey: string): Promise<string | undefined> {
+  return Promise.race([
     getWorkspace(apiKey).then(
       (workspace) => workspace.slug,
       () => undefined,
@@ -953,14 +974,6 @@ async function createdNote(name: string, result: unknown, apiKey: string): Promi
       AbortSignal.timeout(SLUG_LOOKUP_TIMEOUT_MS).addEventListener('abort', () => resolve(undefined));
     }),
   ]);
-
-  return nextStepsText({
-    kind: name === 'create_qrcode' ? 'qrcode' : 'link',
-    created,
-    workspaceSlug,
-    appUrl: config.codeqrAppUrl,
-    apiUrl: config.codeqrApiUrl,
-  });
 }
 
 /**

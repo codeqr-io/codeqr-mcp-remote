@@ -117,10 +117,11 @@ export function renderAnalytics(
   const numbers = new Intl.NumberFormat(locale);
 
   const head = el('header', 'head');
-  // A key without a type is ignored by the analytics API, so a domain and key
-  // query counts the whole domain; naming the key would claim a filter that
-  // did not happen.
-  const subject = !view.query.qrcodeId && !view.query.linkId ? view.query.domain : undefined;
+  // A code named by domain and key is resolved to its id before the call
+  // (analytics-query.ts), so the pair names what was counted; without an id
+  // the numbers are the whole domain's, and only the domain is named.
+  const { domain, key, qrcodeId, linkId } = view.query;
+  const subject = qrcodeId || linkId ? (domain && key ? `${domain}/${key}` : undefined) : domain;
   head.append(el('p', 'caption', subject ? `${strings.metrics[view.metric]} · ${subject}` : strings.metrics[view.metric]));
   head.append(el('p', 'period', intervalName(view.query.interval, strings)));
   if (view.total !== undefined) head.append(el('p', 'total', numbers.format(view.total)));

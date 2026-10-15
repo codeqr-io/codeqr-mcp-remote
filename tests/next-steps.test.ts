@@ -272,3 +272,62 @@ describe('handleToolCall analytics card', () => {
     expect(mockGetWorkspace).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('handleToolCall get_analytics request', () => {
+  const notFound = () => Promise.reject(Object.assign(new Error('Not found'), { status: 404 }));
+  const stub = (found: { qrcode?: string } = {}) => ({
+    analytics: { retrieve: vi.fn().mockResolvedValue({ clicks: 1130, scans: 203, views: 0 }) },
+    qrcodes: { retrieve: vi.fn(() => (found.qrcode ? Promise.resolve({ id: found.qrcode }) : notFound())) },
+    links: { retrieveInfo: vi.fn(notFound) },
+  });
+
+  afterEach(() => {
+    mockGetWorkspace.mockReset();
+    vi.unstubAllEnvs();
+  });
+
+  it('asks the API for QR code traffic when scans are asked over the workspace', async () => {
+    const client = stub();
+
+    const result = await handleToolCall(client as never, 'key', 'get_analytics', { event: 'scans', groupBy: 'count', interval: '7d' });
+
+    expect(client.analytics.retrieve).toHaveBeenCalledWith({ event: 'clicks', groupBy: 'count', interval: '7d', types: 'qrcode' });
+    expect(result.isError).toBeUndefined();
+  });
+
+  it('resolves a domain and key to their QR code, and the card names them', async () => {
+    vi.stubEnv('MCP_UI_ENABLED', '1');
+    mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
+    const client = stub({ qrcode: 'qr_9' });
+
+    const result = await handleToolCall(client as never, 'key', 'get_analytics', {
+      event: 'scans',
+      groupBy: 'count',
+      domain: 'freeqr.ink',
+      key: 'menu-qr',
+    });
+
+    expect(client.analytics.retrieve).toHaveBeenCalledWith({ event: 'scans', groupBy: 'count', qrcodeId: 'qr_9' });
+    expect(result.structuredContent).toMatchObject({
+      metric: 'scans',
+      query: { qrcodeId: 'qr_9', domain: 'freeqr.ink', key: 'menu-qr' },
+    });
+  });
+
+  it('answers a code that does not exist without asking the API for the whole domain', async () => {
+    const client = stub();
+
+    const result = await handleToolCall(client as never, 'key', 'get_analytics', {
+      event: 'scans',
+      groupBy: 'count',
+      domain: 'freeqr.ink',
+      key: 'nope',
+    });
+
+    expect(result).toEqual({
+      content: [{ type: 'text', text: 'Error: No link or QR code at freeqr.ink/nope in this workspace.' }],
+      isError: true,
+    });
+    expect(client.analytics.retrieve).not.toHaveBeenCalled();
+  });
+});

@@ -68,7 +68,16 @@ describe('renderAnalytics', () => {
     expect(text(root, '.total')).toBe('1.234');
   });
 
-  it('names only the domain of a domain and key query, which the API counts whole', () => {
+  it('names the code a domain and key were resolved to', () => {
+    const { root } = render(
+      result({ query: { event: 'scans', groupBy: 'count', interval: '7d', qrcodeId: 'qr_9', domain: 'freeqr.ink', key: 'menu-qr' }, total: 203 }),
+      { locale: 'pt-BR' },
+    );
+
+    expect(text(root, '.caption')).toBe('Scans · freeqr.ink/menu-qr');
+  });
+
+  it('names only the domain of a domain-wide query', () => {
     const { root } = render(
       result({ query: { event: 'scans', groupBy: 'count', interval: '7d', domain: 'freeqr.ink', key: 'menu-qr' }, metric: 'visits', total: 9 }),
       { locale: 'pt-BR' },

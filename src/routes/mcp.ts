@@ -21,6 +21,7 @@ import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
 import { config, isUiEnabled, SERVER_VERSION } from '../config.js';
 import { buildAnalyticsCard } from '../analytics-card.js';
+import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
@@ -740,6 +741,8 @@ export async function handleToolCall(
 ): Promise<ToolResult> {
   try {
     let result: unknown;
+    // The arguments the card describes; get_analytics resolves a code named by domain and key.
+    let cardArgs = args;
 
     switch (name) {
       case 'create_link': {
@@ -804,9 +807,16 @@ export async function handleToolCall(
       case 'delete_qrcode':
         result = await client.qrcodes.delete(args.qrcodeId as string);
         break;
-      case 'get_analytics':
-        result = await client.analytics.retrieve(asParams<Codeqr.AnalyticsRetrieveParams>(args));
+      case 'get_analytics': {
+        const resolved = await resolveAnalyticsQuery(client, args);
+        if ('error' in resolved) {
+          onOutcome?.('invalid_arguments');
+          return { content: [{ type: 'text', text: `Error: ${resolved.error}` }], isError: true };
+        }
+        cardArgs = resolved.cardArgs;
+        result = await client.analytics.retrieve(asParams<Codeqr.AnalyticsRetrieveParams>(resolved.request));
         break;
+      }
       // Both of these used to be called with no arguments at all, so `page`
       // and `pageSize` never reached the API and a workspace with more items
       // than one page reported a truncated list as if it were complete.
@@ -831,7 +841,7 @@ export async function handleToolCall(
     }
 
     onOutcome?.('ok');
-    return await withCreatedNoteAndCard(name, args, result, apiKey);
+    return await withCreatedNoteAndCard(name, cardArgs, result, apiKey);
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
     // one point rather than per tool. The `Error:` prefix is kept for every

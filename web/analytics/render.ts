@@ -11,7 +11,7 @@ export const ANALYTICS_META_KEY = 'io.codeqr/analytics';
 /** Every plan can read these, so the card never offers a window that answers with an error. */
 export const SELECTABLE_INTERVALS = ['24h', '7d', '30d'] as const;
 
-const METRICS = ['clicks', 'scans', 'leads', 'sales'] as const;
+const METRICS = ['visits', 'clicks', 'scans', 'views', 'leads', 'sales'] as const;
 type Metric = (typeof METRICS)[number];
 const MAX_POINTS = 400;
 const MAX_ROWS = 10;
@@ -117,7 +117,10 @@ export function renderAnalytics(
   const numbers = new Intl.NumberFormat(locale);
 
   const head = el('header', 'head');
-  const subject = view.query.domain && view.query.key ? `${view.query.domain}/${view.query.key}` : undefined;
+  // A key without a type is ignored by the analytics API, so a domain and key
+  // query counts the whole domain; naming the key would claim a filter that
+  // did not happen.
+  const subject = !view.query.qrcodeId && !view.query.linkId ? view.query.domain : undefined;
   head.append(el('p', 'caption', subject ? `${strings.metrics[view.metric]} · ${subject}` : strings.metrics[view.metric]));
   head.append(el('p', 'period', intervalName(view.query.interval, strings)));
   if (view.total !== undefined) head.append(el('p', 'total', numbers.format(view.total)));

@@ -15,7 +15,7 @@ const DASHBOARD = 'https://app.codeqr.io/acme/analytics?domain=freeqr.ink&key=me
 const result = (content: Record<string, unknown>, meta: Record<string, unknown> = { dashboardUrl: DASHBOARD }) => ({
   structuredContent: {
     kind: 'analytics',
-    query: { event: 'scans', groupBy: 'count', interval: '7d', domain: 'freeqr.ink', key: 'menu-qr' },
+    query: { event: 'scans', groupBy: 'count', interval: '7d', qrcodeId: 'qr_1' },
     metric: 'scans',
     ...content,
   },
@@ -41,7 +41,7 @@ describe('toAnalyticsView', () => {
   it('renders nothing for an error, another card, an unknown metric or a missing query', () => {
     expect(toAnalyticsView({ ...result({ total: 1 }), isError: true })).toBeNull();
     expect(toAnalyticsView({ structuredContent: { kind: 'qrcode' } })).toBeNull();
-    expect(toAnalyticsView(result({ metric: 'views' }) as never)).toBeNull();
+    expect(toAnalyticsView(result({ metric: 'impressions' }) as never)).toBeNull();
     expect(toAnalyticsView(result({ query: { groupBy: 'count' } }) as never)).toBeNull();
   });
 
@@ -60,18 +60,33 @@ describe('toAnalyticsView', () => {
 });
 
 describe('renderAnalytics', () => {
-  it('shows what is counted, for which code and period, and the total', () => {
+  it('shows what is counted, for which period, and the total', () => {
     const { root } = render(result({ total: 1234 }), { locale: 'pt-BR' });
 
-    expect(text(root, '.caption')).toBe('Scans · freeqr.ink/menu-qr');
+    expect(text(root, '.caption')).toBe('Scans');
     expect(text(root, '.period')).toBe('Últimos 7 dias');
     expect(text(root, '.total')).toBe('1.234');
   });
 
-  it('shows each event of a composite count', () => {
-    const { root } = render(result({ metric: 'clicks', total: 10, totals: { scans: 5, clicks: 10, leads: 2 } }));
+  it('names only the domain of a domain and key query, which the API counts whole', () => {
+    const { root } = render(
+      result({ query: { event: 'scans', groupBy: 'count', interval: '7d', domain: 'freeqr.ink', key: 'menu-qr' }, metric: 'visits', total: 9 }),
+      { locale: 'pt-BR' },
+    );
 
-    expect([...root.querySelectorAll('.tile .label')].map((node) => node.textContent)).toEqual(['Clicks', 'Scans', 'Leads']);
+    expect(text(root, '.caption')).toBe('Acessos · freeqr.ink');
+  });
+
+  it('shows each event of a composite count', () => {
+    const { root } = render(result({ metric: 'visits', total: 16, totals: { scans: 5, clicks: 10, views: 1, leads: 2 } }));
+
+    expect(text(root, '.caption')).toBe('Visits');
+    expect([...root.querySelectorAll('.tile .label')].map((node) => node.textContent)).toEqual([
+      'Clicks',
+      'Scans',
+      'Page views',
+      'Leads',
+    ]);
   });
 
   it('draws a trend line with the first and last dates', () => {

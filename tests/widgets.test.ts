@@ -35,8 +35,12 @@ describe('withWidgetMeta', () => {
 
     expect(withCard.map((tool) => tool.name).sort()).toEqual([...CARD_TOOLS, 'get_analytics'].sort());
     for (const tool of withCard) {
-      const uri = tool.name === 'get_analytics' ? ANALYTICS_URI : ITEM_CARD_URI;
+      const analytics = tool.name === 'get_analytics';
+      const uri = analytics ? ANALYTICS_URI : ITEM_CARD_URI;
       expect(tool._meta).toMatchObject({ ui: { resourceUri: uri }, 'openai/outputTemplate': uri });
+      // Only the analytics card calls its tool back, so only it is callable from the card.
+      expect(tool._meta?.['openai/widgetAccessible'], tool.name).toBe(analytics ? true : undefined);
+      expect((tool._meta?.ui as { visibility?: string[] }).visibility, tool.name).toEqual(analytics ? ['model', 'app'] : undefined);
       for (const key of ['openai/toolInvocation/invoking', 'openai/toolInvocation/invoked']) {
         const status = tool._meta?.[key] as string;
         expect(status.length, `${tool.name} ${key}`).toBeLessThanOrEqual(64);

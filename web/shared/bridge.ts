@@ -11,6 +11,8 @@
 
 export const PROTOCOL_VERSION = '2026-01-26';
 const HANDSHAKE_TIMEOUT_MS = 2_000;
+// A tool call the host never answers must not leave the card waiting forever.
+const TOOL_CALL_TIMEOUT_MS = 20_000;
 
 export interface HostContext {
   theme?: 'light' | 'dark';
@@ -70,11 +72,16 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
 
   const post = (message: Record<string, unknown>) => win.parent.postMessage({ jsonrpc: '2.0', ...message }, '*');
 
-  const request = (method: string, params: unknown) =>
+  const request = (method: string, params: unknown, timeoutMs?: number) =>
     new Promise<unknown>((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve, reject });
       post({ id, method, params });
+      if (timeoutMs) {
+        setTimeout(() => {
+          if (pending.delete(id)) reject(new Error(`${method} timed out`));
+        }, timeoutMs);
+      }
     });
 
   const emitResult = (result: ToolResult) => {
@@ -188,7 +195,7 @@ export function connect(win: BridgeWindow, appInfo: { name: string; version: str
     async callTool(name, args) {
       const answer = useOpenAi
         ? await win.openai?.callTool?.(name, args)
-        : await request('tools/call', { name, arguments: args });
+        : await request('tools/call', { name, arguments: args }, TOOL_CALL_TIMEOUT_MS);
       // ChatGPT's own callTool is documented only as "mirrors model-initiated
       // calls", so only the fields of a CallToolResult are kept, whatever wraps them.
       const result = (answer ?? {}) as Record<string, unknown>;

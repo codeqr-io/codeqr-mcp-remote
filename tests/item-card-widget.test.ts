@@ -338,6 +338,19 @@ describe('connect', () => {
     await expect(called).resolves.toEqual({ structuredContent: { kind: 'analytics' }, _meta: { a: 1 }, isError: false });
   });
 
+  it('gives up on a tool call the host never answers', async () => {
+    vi.useFakeTimers();
+    const { win, posted, fromHost } = fakeWindow();
+    const host = connect(win, { name: 'codeqr-analytics', version: '1' });
+    fromHost({ jsonrpc: '2.0', id: posted[0].id, result: { hostCapabilities: { serverTools: {} } } });
+    await vi.advanceTimersByTimeAsync(0);
+
+    const called = host.callTool('get_analytics', { interval: '7d' });
+    const outcome = expect(called).rejects.toThrow('tools/call timed out');
+    await vi.advanceTimersByTimeAsync(20_000);
+    await outcome;
+  });
+
   it('does not offer tool calls to a host that does not announce them', async () => {
     const { win, posted, fromHost } = fakeWindow();
     const host = connect(win, { name: 'codeqr-analytics', version: '1' });

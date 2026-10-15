@@ -84,13 +84,14 @@ export const WIDGET_RESOURCES = TEMPLATES.map(({ uri, name, title, description }
   mimeType: WIDGET_MIME_TYPE,
 }));
 
-const TOOL_TEMPLATES: Record<string, { uri: string; invoking: string; invoked: string }> = {
+const TOOL_TEMPLATES: Record<string, { uri: string; invoking: string; invoked: string; callableFromCard?: boolean }> = {
   create_qrcode: { uri: ITEM_CARD_URI, invoking: 'Creating the QR code…', invoked: 'QR code created' },
   update_qrcode: { uri: ITEM_CARD_URI, invoking: 'Updating the QR code…', invoked: 'QR code updated' },
   create_link: { uri: ITEM_CARD_URI, invoking: 'Creating the short link…', invoked: 'Short link created' },
   update_link: { uri: ITEM_CARD_URI, invoking: 'Updating the short link…', invoked: 'Short link updated' },
   get_link_info: { uri: ITEM_CARD_URI, invoking: 'Looking up the link…', invoked: 'Link found' },
-  get_analytics: { uri: ANALYTICS_URI, invoking: 'Fetching analytics…', invoked: 'Analytics ready' },
+  // The analytics card re-runs it for another interval.
+  get_analytics: { uri: ANALYTICS_URI, invoking: 'Fetching analytics…', invoked: 'Analytics ready', callableFromCard: true },
 };
 
 /** The tool list as advertised: the cards' tools point at their templates only while the cards are switched on. */
@@ -102,10 +103,13 @@ export function withWidgetMeta<T extends { name: string }>(tools: readonly T[]):
     return {
       ...tool,
       _meta: {
-        ui: { resourceUri: template.uri },
+        ui: { resourceUri: template.uri, ...(template.callableFromCard ? { visibility: ['model', 'app'] } : {}) },
         'openai/outputTemplate': template.uri,
         'openai/toolInvocation/invoking': template.invoking,
         'openai/toolInvocation/invoked': template.invoked,
+        // ChatGPT's own callTool, the card's fallback, refuses a tool without
+        // it (default false); ui.visibility covers MCP Apps hosts.
+        ...(template.callableFromCard ? { 'openai/widgetAccessible': true } : {}),
       },
     };
   });

@@ -5,7 +5,7 @@
   serve web/dev (for example `python3 -m http.server -d web/dev 8790`) and open
   harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375
   Item card fixtures: qr, static, wifi, noimage, link.
-  Analytics fixtures (widget=analytics): count, composite, timeseries, countries, top_qrcodes; the
+  Analytics fixtures (widget=analytics): count, composite, domain, timeseries, countries, top_qrcodes; the
   chips' tools/call is answered with the same shape for the chosen interval.
 -->
 <html>
@@ -55,25 +55,28 @@
         t: new Date(Date.UTC(2026, 9, start + i)).toISOString(),
         v: Math.round(20 + 15 * Math.sin(i / 1.7) + i * 2),
       }));
+      // Shaped as src/analytics-card.ts builds them: a QR code's numbers are
+      // scans; a workspace or domain total is visits; a key without a type
+      // counts the whole domain.
       const analyticsFor = (shape, interval) => {
         const k = scale[interval] ?? 1;
-        const query = { event: 'scans', groupBy: shape === 'composite' ? 'count' : shape, interval, domain: 'freeqr.ink', key: 'menu-qr' };
-        const meta = { 'io.codeqr/analytics': { dashboardUrl: `https://app.codeqr.io/acme/analytics?domain=freeqr.ink&key=menu-qr&type=qrcode&event=scans&interval=${interval}` } };
-        const base = { kind: 'analytics', query, metric: 'scans' };
         const n = (v) => Math.round(v * k);
+        const qr = { event: 'scans', interval, qrcodeId: 'qr_demo' };
+        const qrMeta = { 'io.codeqr/analytics': { dashboardUrl: 'https://app.codeqr.io/acme/qrcodes/edit?id=qr_demo' } };
+        const wsMeta = (domain) => ({ 'io.codeqr/analytics': { dashboardUrl: `https://app.codeqr.io/acme/analytics?${domain ? `domain=${domain}&` : ''}interval=${interval}` } });
+        const card = (query, rest, meta) => ({ structuredContent: { kind: 'analytics', query, ...rest }, _meta: meta });
+        const series = interval === '24h'
+          ? Array.from({ length: 24 }, (_, i) => ({ t: new Date(Date.UTC(2026, 9, 15, i)).toISOString(), v: Math.round(4 + 3 * Math.sin(i / 3)) }))
+          : days(interval === '30d' ? 30 : 7, interval === '30d' ? 15 : 8);
         const shapes = {
-          count: { ...base, total: n(1234) },
-          composite: { ...base, query: { ...query, event: 'composite' }, total: n(1234), totals: { scans: n(1234), clicks: n(310), leads: n(42) } },
-          timeseries: (() => {
-            const series = interval === '24h'
-              ? Array.from({ length: 24 }, (_, i) => ({ t: new Date(Date.UTC(2026, 9, 15, i)).toISOString(), v: Math.round(4 + 3 * Math.sin(i / 3)) }))
-              : days(interval === '30d' ? 30 : 7, interval === '30d' ? 15 : 8);
-            return { ...base, series, total: series.reduce((sum, point) => sum + point.v, 0) };
-          })(),
-          countries: { ...base, total: n(812), rows: [['BR', 512], ['PT', 141], ['US', 88], ['AR', 41], ['ES', 30]].map(([c, v]) => ({ label: c, v: n(v), country: c })), more: 6 },
-          top_qrcodes: { ...base, query: { event: 'scans', groupBy: 'top_qrcodes', interval }, total: n(640), rows: [['freeqr.ink/menu-qr', 402], ['freeqr.ink/wifi-qr', 133], ['freeqr.ink/event-qr', 105]].map(([label, v]) => ({ label, v: n(v) })) },
+          count: () => card({ ...qr, groupBy: 'count' }, { metric: 'scans', total: n(1234) }, qrMeta),
+          composite: () => card({ event: 'composite', groupBy: 'count', interval }, { metric: 'visits', total: n(1586), totals: { clicks: n(310), scans: n(1234), views: n(42), leads: n(12) } }, wsMeta()),
+          domain: () => card({ event: 'scans', groupBy: 'count', interval, domain: 'freeqr.ink', key: 'menu-qr' }, { metric: 'visits', total: n(1586) }, wsMeta('freeqr.ink')),
+          timeseries: () => card({ ...qr, groupBy: 'timeseries' }, { metric: 'scans', series, total: series.reduce((sum, point) => sum + point.v, 0) }, qrMeta),
+          countries: () => card({ ...qr, groupBy: 'countries' }, { metric: 'scans', total: n(812), rows: [['BR', 512], ['PT', 141], ['US', 88], ['AR', 41], ['ES', 30]].map(([c, v]) => ({ label: c, v: n(v), country: c })), more: 6 }, qrMeta),
+          top_qrcodes: () => card({ event: 'scans', groupBy: 'top_qrcodes', interval }, { metric: 'scans', rows: [['freeqr.ink/menu-qr', 402], ['freeqr.ink/wifi-qr', 133], ['freeqr.ink/event-qr', 105]].map(([label, v]) => ({ label, v: n(v) })) }, wsMeta()),
         };
-        return { structuredContent: shapes[shape], _meta: meta };
+        return shapes[shape]();
       };
       const fixture = params.get('fixture') || (widget === 'analytics' ? 'timeseries' : 'qr');
       const result = widget === 'analytics' ? analyticsFor(fixture, params.get('interval') || '7d') : fixtures[fixture];

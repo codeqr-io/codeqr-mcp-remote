@@ -87,20 +87,30 @@ describe('buildItemCard', () => {
     expect(JSON.stringify(card)).not.toMatch(SENSITIVE);
   });
 
-  it('marks a static QR code as such', () => {
+  it('marks a static QR code as such, without a scan count it cannot have', () => {
     const card = buildItemCard('qrcode', { ...qrRow, static: true }, { slug: 'acme', ...urls });
 
     expect(card?.structuredContent.isStatic).toBe(true);
+    expect(card?.structuredContent).not.toHaveProperty('scans');
   });
 
-  it('falls back to the public QR generator when the stored image is not on Cloudinary', () => {
-    const elsewhere = { ...qrRow, image: 'https://evil.example/tracker.png' };
-    const missing = { ...qrRow, image: null };
+  it('draws a static QR code without a stored image from its own row through the public generator', () => {
+    const elsewhere = { ...qrRow, static: true, image: 'https://evil.example/tracker.png' };
+    const missing = { ...qrRow, static: true, image: null };
 
     for (const row of [elsewhere, missing]) {
       const card = buildItemCard('qrcode', row, { slug: 'acme', ...urls });
       expect(card?.meta[ITEM_CARD_META_KEY].imageUrl).toBe(qrImageUrl(API, 'https://freeqr.ink/abc-qr'));
     }
+  });
+
+  it('shows no image for a dynamic QR code without a stored one', () => {
+    // The generator draws a known code from its row, and a URL row holds the
+    // destination: that image would skip the short link, so nothing is shown.
+    const card = buildItemCard('qrcode', { ...qrRow, image: null }, { slug: 'acme', ...urls });
+
+    expect(card?.meta[ITEM_CARD_META_KEY]).not.toHaveProperty('imageUrl');
+    expect(card?.meta[ITEM_CARD_META_KEY].editUrl).toContain('/acme/qrcodes/edit');
   });
 
   it('describes a link with its clicks and the QR image the API already built for it', () => {

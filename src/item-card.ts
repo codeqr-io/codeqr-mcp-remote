@@ -50,7 +50,8 @@ export type ItemCard = {
 export const ITEM_CARD_META_KEY = 'io.codeqr/card';
 
 export type ItemCardMeta = {
-  imageUrl: string;
+  /** Absent when no image would show what is actually printed; see imageUrlOf. */
+  imageUrl?: string;
   editUrl: string;
 };
 
@@ -86,36 +87,47 @@ export function buildItemCard(
   const destination = nonEmptyString(row.url);
   if (destination && (kind === 'link' || row.type === 'url')) card.destination = destination;
 
+  // A static code is never counted, so its zero would read as "nobody scanned it".
   const counter = kind === 'qrcode' ? 'scans' : 'clicks';
-  if (typeof row[counter] === 'number') card[counter] = row[counter] as number;
+  if (!created.isStatic && typeof row[counter] === 'number') card[counter] = row[counter] as number;
 
   const section = kind === 'qrcode' ? 'qrcodes' : 'links';
   const editUrl = slug
     ? `${appUrl}/${slug}/${section}/edit?id=${encodeURIComponent(created.id)}${kind === 'qrcode' ? '&showDownload=true' : ''}`
     : appUrl;
 
+  const imageUrl = imageUrlOf(kind, row, created.isStatic, shortLink, apiUrl);
   return {
     structuredContent: card,
-    meta: { [ITEM_CARD_META_KEY]: { imageUrl: imageUrlOf(kind, row, shortLink, apiUrl), editUrl } },
+    meta: { [ITEM_CARD_META_KEY]: { ...(imageUrl ? { imageUrl } : {}), editUrl } },
   };
 }
 
 /**
- * A QR code's stored image is its real design, frame and logo included, so it
- * is preferred over a fresh render. A link's API response already carries a
- * QR image URL from the public generator. Anything pointing elsewhere is
- * replaced rather than trusted: the widget only loads images from the origins
- * its CSP declares.
+ * A QR code's stored image is its real design, frame and logo included. A
+ * link's API response already carries a QR image URL from the public
+ * generator. Anything pointing elsewhere is replaced rather than trusted: the
+ * widget only loads images from the origins its CSP declares.
+ *
+ * Without a stored image, the generator draws a known QR code from its own
+ * row, and a URL row holds the destination itself. That is what a static code
+ * encodes, but for a dynamic one it would be a code that skips the short link,
+ * uncounted and impossible to re-point, so a dynamic QR code then gets no image.
  */
-function imageUrlOf(kind: ItemCardKind, row: Record<string, unknown>, shortLink: string, apiUrl: string): string {
-  if (kind === 'qrcode') {
-    const stored = nonEmptyString(row.image);
-    if (stored && isHttpsOn(stored, STORED_IMAGE_HOST)) return stored;
-  } else {
+function imageUrlOf(
+  kind: ItemCardKind,
+  row: Record<string, unknown>,
+  isStatic: boolean,
+  shortLink: string,
+  apiUrl: string,
+): string | undefined {
+  if (kind === 'link') {
     const generated = nonEmptyString(row.qrCode);
-    if (generated?.startsWith(`${apiUrl}/qr?`)) return generated;
+    return generated?.startsWith(`${apiUrl}/qr?`) ? generated : qrImageUrl(apiUrl, shortLink);
   }
-  return qrImageUrl(apiUrl, shortLink);
+  const stored = nonEmptyString(row.image);
+  if (stored && isHttpsOn(stored, STORED_IMAGE_HOST)) return stored;
+  return isStatic ? qrImageUrl(apiUrl, shortLink) : undefined;
 }
 
 function isHttpsOn(url: string, host: string): boolean {

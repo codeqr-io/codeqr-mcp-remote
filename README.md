@@ -70,6 +70,7 @@ vercel
 # - CODEQR_OAUTH_CLIENT_ID — client_id of the OAuth app registered in CodeQR
 # - CODEQR_OAUTH_CLIENT_SECRET — its client_secret
 # - CODEQR_APP_URL — Dashboard origin (default: https://app.codeqr.io)
+# - MCP_UI_ENABLED — Set to 1 to show the item card in hosts that render MCP Apps (off when unset)
 # - STAINLESS_API_KEY — Optional Stainless API key
 # - LOG_LEVEL — Log level (default: info)
 ```
@@ -188,6 +189,29 @@ whole (a field left out of it is cleared, not merged) — send `name`, `logo`
 and `barcodeText` together to keep all three; `null` clears the override and
 reverts to the workspace branding, the same way `rules: null` ends a running
 smart-rules test.
+
+### Interactive cards (MCP Apps)
+
+With `MCP_UI_ENABLED=1`, hosts that render [MCP Apps](https://modelcontextprotocol.io/docs/extensions/apps)
+(ChatGPT, Claude) show a card for the QR code or short link returned by
+`create_qrcode`, `update_qrcode`, `create_link`, `update_link` and
+`get_link_info`: its image, short link with a copy button, whether it is
+dynamic, the destination and the scan or click count, plus a button to open it
+in the CodeQR dashboard and one that asks how many scans or clicks it had.
+
+- The tools' `_meta.ui.resourceUri` points at `ui://codeqr/item-card.v1.html`,
+  served through `resources/read` (`src/widgets/`). Each read is logged as
+  `mcp.resource_read`.
+- The result carries `structuredContent` (an allowlist of fields; hosts show it
+  to the model too) and `_meta["io.codeqr/card"]` (image and dashboard URLs,
+  for the card only). `content` is unchanged, for clients without UI.
+- The page lives in `web/item-card/`. `yarn widgets:build` bundles it into
+  `src/widgets/generated/item-card.ts`, which is committed; `yarn verify`
+  fails when it is stale. To look at it in a browser, run
+  `node scripts/build-widgets.mjs --html`, serve `web/dev/` and open
+  `harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375`.
+
+Unset, the tool list, the resource list and every result are what they were.
 
 ## API Endpoints
 

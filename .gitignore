@@ -8,3 +8,4 @@ dist/
 *.pem
 *.key
 .DS_Store
+web/dev/out/

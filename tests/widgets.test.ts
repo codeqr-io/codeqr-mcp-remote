@@ -66,8 +66,12 @@ describe('readWidget', () => {
     const [content] = readWidget(ITEM_CARD_URI)?.contents ?? [];
 
     expect(content._meta['openai/widgetDescription']).toBe(WIDGET_DESCRIPTION);
-    expect(WIDGET_DESCRIPTION).toMatch(/Do not show the QR image, the short link, the destination or the CodeQR link again/);
+    expect(WIDGET_DESCRIPTION).toMatch(/Answer what the user asked first/);
+    expect(WIDGET_DESCRIPTION).toMatch(/Do not repeat what the card shows/);
     expect(WIDGET_DESCRIPTION).toMatch(/do not build another card/);
+    // The card varies (a static code has no count, a link asks about clicks),
+    // so the description must not promise every part is always there.
+    expect(WIDGET_DESCRIPTION).toMatch(/where they apply/);
   });
 
   it('leaves the host-specific ui.domain out', () => {

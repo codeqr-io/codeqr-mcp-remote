@@ -34,10 +34,11 @@ export const WIDGET_RESOURCES = [
 ];
 
 export const WIDGET_DESCRIPTION =
-  'The user already sees a card for this QR code or short link: its image, the short link with a copy button, ' +
-  'where it leads, its scan or click count, and buttons to open it in CodeQR and to ask about its scans. ' +
-  'Do not show the QR image, the short link, the destination or the CodeQR link again, and do not build another ' +
-  'card, list or table of its details. Reply in one or two sentences, in the user\'s language, with what they can do next.';
+  'The user sees a card for this QR code or short link showing, where they apply, its image, the short link with a ' +
+  'copy button, where it leads, its scan or click count, and buttons to open it in CodeQR and to ask how it is doing. ' +
+  'Answer what the user asked first. Do not repeat what the card shows (the QR image, short link, destination, count ' +
+  'or CodeQR link) and do not build another card, list or table of it; other details, such as smart rules, tags or ' +
+  "expiry, are fine to give when they are asked for. Keep the reply short, in the user's language.";
 
 const INVOCATION_STATUS: Record<ItemCardTool, { invoking: string; invoked: string }> = {
   create_qrcode: { invoking: 'Creating the QR code…', invoked: 'QR code created' },

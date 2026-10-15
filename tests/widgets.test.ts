@@ -9,7 +9,7 @@ process.env.CODEQR_OAUTH_CLIENT_SECRET = 'secret_test';
 process.env.VERCEL = '1';
 
 const { TOOLS } = await import('../src/routes/mcp.js');
-const { ITEM_CARD_URI, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } = await import('../src/widgets/index.js');
+const { ITEM_CARD_URI, WIDGET_DESCRIPTION, WIDGET_MIME_TYPE, readWidget, withWidgetMeta } = await import('../src/widgets/index.js');
 const { createAccessToken } = await import('../src/oauth/store.js');
 const indexApp = (await import('../src/index.js')).default;
 
@@ -60,6 +60,18 @@ describe('readWidget', () => {
     });
     expect(content._meta['openai/widgetCSP']).toMatchObject({ redirect_domains: ['https://app.example.test'] });
     expect(content._meta['openai/widgetDescription']).not.toMatch(SELLING);
+  });
+
+  it('tells ChatGPT not to render the result again under the card', () => {
+    const [content] = readWidget(ITEM_CARD_URI)?.contents ?? [];
+
+    expect(content._meta['openai/widgetDescription']).toBe(WIDGET_DESCRIPTION);
+    expect(WIDGET_DESCRIPTION).toMatch(/Answer what the user asked first/);
+    expect(WIDGET_DESCRIPTION).toMatch(/Do not repeat what the card shows/);
+    expect(WIDGET_DESCRIPTION).toMatch(/do not build another card/);
+    // The card varies (a static code has no count, a link asks about clicks),
+    // so the description must not promise every part is always there.
+    expect(WIDGET_DESCRIPTION).toMatch(/where they apply/);
   });
 
   it('leaves the host-specific ui.domain out', () => {

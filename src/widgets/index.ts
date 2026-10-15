@@ -33,6 +33,13 @@ export const WIDGET_RESOURCES = [
   },
 ];
 
+export const WIDGET_DESCRIPTION =
+  'The user sees a card for this QR code or short link showing, where they apply, its image, the short link with a ' +
+  'copy button, where it leads, its scan or click count, and buttons to open it in CodeQR and to ask how it is doing. ' +
+  'Answer what the user asked first. Do not repeat what the card shows (the QR image, short link, destination, count ' +
+  'or CodeQR link) and do not build another card, list or table of it; other details, such as smart rules, tags or ' +
+  "expiry, are fine to give when they are asked for. Keep the reply short, in the user's language.";
+
 const INVOCATION_STATUS: Record<ItemCardTool, { invoking: string; invoked: string }> = {
   create_qrcode: { invoking: 'Creating the QR code…', invoked: 'QR code created' },
   update_qrcode: { invoking: 'Updating the QR code…', invoked: 'QR code updated' },
@@ -85,8 +92,9 @@ export function readWidget(uri: string) {
           // ChatGPT may open links from the card.
           'openai/widgetCSP': { connect_domains: [], resource_domains: resourceDomains, redirect_domains: [appOrigin] },
           'openai/widgetPrefersBorder': true,
-          'openai/widgetDescription':
-            'The card already shows the QR code or link, its short link, destination and count, and a button to open it in CodeQR. Do not repeat those details; suggest what to do next instead.',
+          // ChatGPT otherwise tends to render the result a second time from
+          // the text note (image, links, buttons), right under the card.
+          'openai/widgetDescription': WIDGET_DESCRIPTION,
         },
       },
     ],

@@ -7,7 +7,14 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
@@ -17,6 +24,7 @@ import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { logEvent } from '../telemetry.js';
+import { readWidget, WIDGET_RESOURCES, withWidgetMeta } from '../widgets/index.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
 
@@ -860,7 +868,8 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
     { name: 'codeqr', version: SERVER_VERSION },
     {
       instructions: SERVER_INSTRUCTIONS,
-      capabilities: { tools: {} },
+      // `resources` serves the item card's template (widgets/index.ts).
+      capabilities: { tools: {}, resources: {} },
     },
   );
 
@@ -872,7 +881,27 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
 
   innerServer.setRequestHandler(ListToolsRequestSchema, async () => {
     logEvent('mcp.tools_list', { clientId: req.oauthClientId, keyHashPrefix: req.keyHashPrefix });
-    return { tools: TOOLS };
+    return { tools: withWidgetMeta(TOOLS) };
+  });
+
+  // No CodeQR call here, on purpose: a host may fetch the template before any
+  // tool runs, and the workspace lookup would record a first use that never
+  // happened (InstalledIntegration.firstUsedAt).
+  innerServer.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: isUiEnabled() ? WIDGET_RESOURCES : [],
+  }));
+
+  innerServer.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    const widget = readWidget(uri);
+    logEvent('mcp.resource_read', {
+      clientId: req.oauthClientId,
+      keyHashPrefix: req.keyHashPrefix,
+      resource: uri,
+      outcome: widget ? 'ok' : 'error',
+    });
+    if (!widget) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+    return widget;
   });
 
   innerServer.setRequestHandler(CallToolRequestSchema, async (request) => {

@@ -144,8 +144,11 @@ function metricOf(event: string, scope: 'qrcode' | 'link' | 'all', groupBy: stri
   if (event === 'leads' || event === 'sales') return event;
   if (scope === 'qrcode') return 'scans';
   if (scope === 'link') return 'clicks';
-  if (groupBy === 'top_qrcodes' || event === 'scans') return 'scans';
-  if (groupBy === 'top_links' || event === 'clicks') return 'clicks';
+  // A top list is of one kind, whatever the event.
+  if (groupBy === 'top_qrcodes') return 'scans';
+  if (groupBy === 'top_links') return 'clicks';
+  if (event === 'scans') return 'scans';
+  if (event === 'clicks') return 'clicks';
   return 'visits';
 }
 

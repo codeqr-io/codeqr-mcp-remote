@@ -125,6 +125,17 @@ describe('buildAnalyticsCard', () => {
     expect(cities?.rows).toEqual([{ label: 'São Paulo', v: 4, country: 'BR' }]);
   });
 
+  it('counts a top list by its own kind, whatever event was asked for', () => {
+    expect(card({ event: 'scans', groupBy: 'top_links' }, [{ shortLink: 'https://cqr.ink/launch', clicks: 5 }])).toMatchObject({
+      metric: 'clicks',
+      rows: [{ label: 'cqr.ink/launch', v: 5 }],
+    });
+    expect(card({ event: 'clicks', groupBy: 'top_qrcodes' }, [{ shortLink: 'https://freeqr.ink/menu-qr', scans: 8 }])).toMatchObject({
+      metric: 'scans',
+      rows: [{ label: 'freeqr.ink/menu-qr', v: 8 }],
+    });
+  });
+
   it('builds a card for an empty period, and none for a shape it does not know', () => {
     expect(card({ event: 'clicks', groupBy: 'countries' }, [])).toMatchObject({ total: 0, rows: [] });
     expect(card({ event: 'clicks', groupBy: 'count' }, 'nope')).toBeUndefined();

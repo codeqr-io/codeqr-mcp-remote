@@ -63,10 +63,14 @@ async function findCode(
   // the API takes from the credential instead (as with links.retrieveInfo in
   // routes/mcp.ts).
   const lookup = { domain, key } as never;
-  // Only "not found" means the code is not of that kind; any other failure
-  // (a rate limit, an outage) must not read as "no such code".
+  // Only "not found" means the code is not of that kind here; any other
+  // failure (a rate limit, an outage, a refused credential) must not read as
+  // "no such code". A code of another workspace answers 401 with this message
+  // (app lib/api/{qrcodes,links}/get-*-or-throw.ts): not in this one either.
   const unlessNotFound = (error: unknown) => {
-    if ((error as { status?: unknown } | null)?.status === 404) return undefined;
+    const { status, message } = (error ?? {}) as { status?: unknown; message?: unknown };
+    if (status === 404) return undefined;
+    if (status === 401 && /does not belong to project/i.test(String(message))) return undefined;
     throw error;
   };
   const [qrcode, link] = await Promise.all([

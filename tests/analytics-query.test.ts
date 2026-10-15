@@ -79,6 +79,21 @@ describe('resolveAnalyticsQuery', () => {
     expect(resolved).toEqual({ error: 'No link or QR code at freeqr.ink/nope in this workspace.' });
   });
 
+  it("treats another workspace's code as no code in this one", async () => {
+    const api = client({ link: undefined });
+    api.qrcodes.retrieve.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('401 {"error":{"code":"unauthorized","message":"qrCode does not belong to project ws_1."}}'), {
+          status: 401,
+        }),
+      ),
+    );
+
+    const resolved = await resolveAnalyticsQuery(api as never, { event: 'scans', groupBy: 'count', domain: 'freeqr.ink', key: 'theirs-qr' });
+
+    expect(resolved).toEqual({ error: 'No link or QR code at freeqr.ink/theirs-qr in this workspace.' });
+  });
+
   it('passes on a lookup that failed for another reason than not found', async () => {
     const api = client();
     api.qrcodes.retrieve.mockImplementation(() => Promise.reject(Object.assign(new Error('Rate limited'), { status: 429 })));
@@ -86,6 +101,14 @@ describe('resolveAnalyticsQuery', () => {
     await expect(
       resolveAnalyticsQuery(api as never, { event: 'scans', groupBy: 'count', domain: 'freeqr.ink', key: 'menu-qr' }),
     ).rejects.toThrow('Rate limited');
+
+    // A credential the API refuses is not "no such code" either.
+    api.qrcodes.retrieve.mockImplementation(() =>
+      Promise.reject(Object.assign(new Error('401 {"error":{"code":"unauthorized","message":"Invalid API key."}}'), { status: 401 })),
+    );
+    await expect(
+      resolveAnalyticsQuery(api as never, { event: 'scans', groupBy: 'count', domain: 'freeqr.ink', key: 'menu-qr' }),
+    ).rejects.toThrow('Invalid API key');
   });
 
   it("treats a domain's root as the domain itself, without a lookup", async () => {

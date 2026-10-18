@@ -870,6 +870,28 @@ describe('MCP funnel fields', () => {
     });
   });
 
+  it('HEAD /mcp answers the same 404 and logs nothing', async () => {
+    const res = await request(indexApp).head('/mcp');
+
+    expect(res.status).toBe(404);
+    expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
+  });
+
+  it('a rejected initialize logs mcp.rejected and no mcp.initialize', async () => {
+    const token = await bearer();
+
+    const res = await request(indexApp)
+      .post('/mcp')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Accept', 'application/json')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } }));
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(1);
+    expect(lines.filter((l) => l.event === 'mcp.initialize')).toHaveLength(0);
+  });
+
   it('an unknown path other than /mcp logs nothing', async () => {
     await request(indexApp).get('/no-such-path');
 

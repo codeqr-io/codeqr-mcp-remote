@@ -47,4 +47,11 @@ describe('toolIntentFields', () => {
       'secret',
     );
   });
+
+  it('logs a declared type as sent, anything else as other, none as url', () => {
+    expect(toolIntentFields('create_qrcode', { type: 'wifi' }).qrType).toBe('wifi');
+    expect(toolIntentFields('create_qrcode', { type: 'evil <script>' }).qrType).toBe('other');
+    expect(toolIntentFields('create_qrcode', { type: 42 }).qrType).toBe('other');
+    expect(toolIntentFields('create_qrcode', {}).qrType).toBe('url');
+  });
 });

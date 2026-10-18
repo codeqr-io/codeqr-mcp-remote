@@ -67,12 +67,15 @@ const NOT_FOUND_BODY = {
 // GET and DELETE on /mcp are the only unknown requests logged: they show which
 // clients try a stateful session. The response is the catch-all's.
 const logMcpNotFound = (req: Request, res: Response) => {
-  logEvent('mcp.rejected', {
-    status: 404,
-    reason: 'not_found',
-    httpMethod: req.method,
-    userAgent: req.headers['user-agent'],
-  });
+  // Express routes HEAD through app.get; a probe is not a session attempt.
+  if (req.method !== 'HEAD') {
+    logEvent('mcp.rejected', {
+      status: 404,
+      reason: 'not_found',
+      httpMethod: req.method,
+      userAgent: req.headers['user-agent'],
+    });
+  }
   res.status(404).json(NOT_FOUND_BODY);
 };
 

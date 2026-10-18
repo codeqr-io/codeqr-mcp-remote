@@ -27,6 +27,7 @@ import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { hashPrefix, logEvent } from '../telemetry.js';
+import { DEFAULT_QRCODE_TYPE, QRCODE_CONTENT_TYPES } from '../qrcode-content-types.js';
 import { toolIntentFields } from '../tool-intent.js';
 import { readWidget, WIDGET_RESOURCES, withWidgetMeta } from '../widgets/index.js';
 
@@ -102,18 +103,6 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * the mistake this file just corrected: advertising a capability that answers
  * with silence.
  */
-const QRCODE_CONTENT_TYPES = [
-  'url',
-  'text',
-  'email',
-  'phone',
-  'sms',
-  'wifi',
-  'vcard',
-  'crypto',
-  'whatsapp',
-] as const;
-
 const QRCODE_PAYLOAD_PROPERTIES = {
   url: { type: 'string', description: 'For type "url": the destination the code should lead to' },
   text: { type: 'string', description: 'For type "text": the plain text to encode' },
@@ -791,7 +780,7 @@ export async function handleToolCall(
         // here keeps the common "make a QR code for this URL" call working
         // instead of failing validation before anything is created.
         result = await client.qrcodes.create(
-          asParams<Codeqr.QrcodeCreateParams>({ type: 'url', ...args }),
+          asParams<Codeqr.QrcodeCreateParams>({ type: DEFAULT_QRCODE_TYPE, ...args }),
         );
         break;
       case 'list_qrcodes':
@@ -962,8 +951,22 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
     return end(...args);
   }) as Response['end'];
 
+  const initialize = initializeParams(req.body);
+
   res.on('finish', () => {
-    if (res.statusCode < 400) return;
+    if (res.statusCode < 400) {
+      if (initialize) {
+        logEvent('mcp.initialize', {
+          clientId: req.oauthClientId,
+          keyHashPrefix: req.keyHashPrefix,
+          protocolVersion: stringOrUndefined(initialize.protocolVersion),
+          clientName: stringOrUndefined(initialize.clientInfo?.name),
+          clientVersion: stringOrUndefined(initialize.clientInfo?.version),
+          userAgent: req.headers['user-agent'],
+        });
+      }
+      return;
+    }
     logEvent('mcp.rejected', {
       status: res.statusCode,
       reason: 'transport',
@@ -976,18 +979,6 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
       hasSession: Boolean(req.headers['mcp-session-id']),
     });
   });
-
-  const initialize = initializeParams(req.body);
-  if (initialize) {
-    logEvent('mcp.initialize', {
-      clientId: req.oauthClientId,
-      keyHashPrefix: req.keyHashPrefix,
-      protocolVersion: stringOrUndefined(initialize.protocolVersion),
-      clientName: stringOrUndefined(initialize.clientInfo?.name),
-      clientVersion: stringOrUndefined(initialize.clientInfo?.version),
-      userAgent: req.headers['user-agent'],
-    });
-  }
 
   // Handle the request via StreamableHTTP transport
   const transport = new StreamableHTTPServerTransport();

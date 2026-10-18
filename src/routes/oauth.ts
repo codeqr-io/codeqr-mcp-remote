@@ -48,7 +48,7 @@ import { sendConsentPage } from '../oauth/consent-page.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
 import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
-import { clientIdentity, keyHashPrefix, logEvent, redirectHost } from '../telemetry.js';
+import { clientIdentity, hashPrefix, keyHashPrefix, logEvent, redirectHost, type EventFields } from '../telemetry.js';
 
 const MAX_CLIENT_NAME_LENGTH = 200;
 const MAX_REDIRECT_URIS = 10;
@@ -135,7 +135,7 @@ export function createOAuthRouter(): Router {
   // ── Authorization Endpoint ─────────────────────────────────────────────────
 
   router.get('/authorize', async (req: Request, res: Response) => {
-    const request = await checkAuthorizeRequest(req.query, res);
+    const request = await checkAuthorizeRequest(req, req.query, res);
     if (!request) return;
 
     const binding = issueBinding(req, res);
@@ -143,6 +143,7 @@ export function createOAuthRouter(): Router {
     logEvent('oauth.consent', {
       decision: 'shown',
       clientId: request.client.clientId,
+      ...consentTrace(req, binding),
       ...clientIdentity(request.redirectUri, request.client.clientName),
     });
 
@@ -170,7 +171,7 @@ export function createOAuthRouter(): Router {
     // post an approval from the user's browser for a client they never saw.
     const binding = readBinding(req);
     if (!binding || !sameBinding(binding, param(body.csrf_token))) {
-      logEvent('oauth.consent', { outcome: 'error', reason: 'binding_mismatch' });
+      logEvent('oauth.consent', { outcome: 'error', reason: 'binding_mismatch', ...consentTrace(req, binding) });
       res.status(403).json({
         error: 'invalid_request',
         error_description: 'This approval could not be verified. Start the connection again from your app.',
@@ -178,13 +179,18 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    const request = await checkAuthorizeRequest(body, res);
+    const request = await checkAuthorizeRequest(req, body, res);
     if (!request) return;
 
     const identity = clientIdentity(request.redirectUri, request.client.clientName);
 
     if (param(body.decision) !== 'approve') {
-      logEvent('oauth.consent', { decision: 'deny', clientId: request.client.clientId, ...identity });
+      logEvent('oauth.consent', {
+        decision: 'deny',
+        clientId: request.client.clientId,
+        ...identity,
+        ...consentTrace(req, binding),
+      });
       redirectWithError(
         res,
         request.redirectUri,
@@ -209,7 +215,13 @@ export function createOAuthRouter(): Router {
       browserBinding: issueBinding(req, res),
     });
 
-    logEvent('oauth.consent', { decision: 'approve', clientId: request.client.clientId, ...identity });
+    logEvent('oauth.consent', {
+      decision: 'approve',
+      clientId: request.client.clientId,
+      ...identity,
+      ...consentTrace(req, binding),
+      stateHash: hashPrefix(brokerState),
+    });
 
     res.redirect(
       303,
@@ -227,7 +239,7 @@ export function createOAuthRouter(): Router {
     const { code, state, error, error_description } = req.query as Record<string, string>;
 
     if (!state) {
-      logEvent('oauth.callback', { outcome: 'error', reason: 'missing_state' });
+      logEvent('oauth.callback', { outcome: 'error', reason: 'missing_state', ...callbackTrace(req) });
       res.status(400).json({
         error: 'invalid_request',
         error_description: 'Missing state parameter',
@@ -238,7 +250,7 @@ export function createOAuthRouter(): Router {
     const pending = await consumePendingAuthorization(state);
 
     if (!pending) {
-      logEvent('oauth.callback', { outcome: 'error', reason: 'expired_or_used' });
+      logEvent('oauth.callback', { outcome: 'error', reason: 'expired_or_used', ...callbackTrace(req) });
       // Also the path taken when the user lets the approval screen sit for half
       // an hour, so it is phrased as something they can act on.
       res.status(400).json({
@@ -252,7 +264,12 @@ export function createOAuthRouter(): Router {
     // server's consent screen is a CodeQR link someone was handed, so it ends
     // here — no code, and nothing sent to the redirect_uri.
     if (!sameBinding(readBinding(req), pending.browserBinding)) {
-      logEvent('oauth.callback', { outcome: 'error', reason: 'other_browser', clientId: pending.clientId });
+      logEvent('oauth.callback', {
+        outcome: 'error',
+        reason: 'other_browser',
+        clientId: pending.clientId,
+        ...callbackTrace(req),
+      });
       res.status(400).json({
         error: 'invalid_request',
         error_description:
@@ -268,6 +285,7 @@ export function createOAuthRouter(): Router {
         outcome: 'error',
         reason: `codeqr_${error}`,
         clientId: pending.clientId,
+        ...callbackTrace(req),
       });
       redirectWithError(
         res,
@@ -280,7 +298,12 @@ export function createOAuthRouter(): Router {
     }
 
     if (!code) {
-      logEvent('oauth.callback', { outcome: 'error', reason: 'no_code', clientId: pending.clientId });
+      logEvent('oauth.callback', {
+        outcome: 'error',
+        reason: 'no_code',
+        clientId: pending.clientId,
+        ...callbackTrace(req),
+      });
       redirectWithError(
         res,
         pending.redirectUri,
@@ -298,7 +321,12 @@ export function createOAuthRouter(): Router {
         redirectUri: getCallbackUrl(req),
       });
     } catch (err) {
-      logEvent('oauth.callback', { outcome: 'error', reason: 'exchange_failed', clientId: pending.clientId });
+      logEvent('oauth.callback', {
+        outcome: 'error',
+        reason: 'exchange_failed',
+        clientId: pending.clientId,
+        ...callbackTrace(req),
+      });
       const message = err instanceof Error ? err.message : 'Token exchange with CodeQR failed';
       redirectWithError(res, pending.redirectUri, 'server_error', message, pending.clientState);
       return;
@@ -320,6 +348,7 @@ export function createOAuthRouter(): Router {
       clientId: pending.clientId,
       redirectHost: redirectHost(pending.redirectUri),
       keyHashPrefix: keyHashPrefix(codeqr.accessToken),
+      ...callbackTrace(req),
     });
 
     const redirectUrl = new URL(pending.redirectUri);
@@ -426,6 +455,7 @@ interface AuthorizeRequest {
  * Sends the error response itself and returns null when the request stops here.
  */
 async function checkAuthorizeRequest(
+  req: Request,
   input: Record<string, unknown>,
   res: Response,
 ): Promise<AuthorizeRequest | null> {
@@ -438,7 +468,7 @@ async function checkAuthorizeRequest(
   const scope = param(input.scope);
 
   if (!clientId || !redirectUri) {
-    rejectAuthorize('missing_client_or_redirect');
+    rejectAuthorize(req, 'missing_client_or_redirect');
     res.status(400).json({
       error: 'invalid_request',
       error_description: 'client_id and redirect_uri are required',
@@ -452,7 +482,7 @@ async function checkAuthorizeRequest(
   const client = await getRegisteredClient(clientId);
 
   if (!client) {
-    rejectAuthorize('unknown_client');
+    rejectAuthorize(req, 'unknown_client');
     res.status(400).json({
       error: 'invalid_client',
       error_description: 'Unknown client_id. Register via POST /oauth/register first.',
@@ -461,7 +491,7 @@ async function checkAuthorizeRequest(
   }
 
   if (!client.redirectUris.includes(redirectUri)) {
-    rejectAuthorize('redirect_uri_mismatch', clientId);
+    rejectAuthorize(req, 'redirect_uri_mismatch', clientId);
     res.status(400).json({
       error: 'invalid_request',
       error_description: 'redirect_uri does not match any URI registered for this client',
@@ -471,7 +501,7 @@ async function checkAuthorizeRequest(
 
   // Re-checked here for clients registered before /register validated URIs.
   if (!isAllowedRedirectUri(redirectUri)) {
-    rejectAuthorize('redirect_uri_not_allowed', clientId);
+    rejectAuthorize(req, 'redirect_uri_not_allowed', clientId);
     res.status(400).json({
       error: 'invalid_request',
       error_description: 'redirect_uri is not an allowed redirect target',
@@ -482,13 +512,13 @@ async function checkAuthorizeRequest(
   // From here the redirect_uri is trusted, so failures are reported to the
   // client as OAuth errors rather than as an HTTP page the user is stuck on.
   if (responseType !== 'code') {
-    rejectAuthorize('unsupported_response_type', clientId);
+    rejectAuthorize(req, 'unsupported_response_type', clientId);
     redirectWithError(res, redirectUri, 'unsupported_response_type', 'Only "code" is supported', clientState);
     return null;
   }
 
   if (!codeChallenge || codeChallengeMethod !== 'S256') {
-    rejectAuthorize('pkce_required', clientId);
+    rejectAuthorize(req, 'pkce_required', clientId);
     redirectWithError(
       res,
       redirectUri,
@@ -500,7 +530,7 @@ async function checkAuthorizeRequest(
   }
 
   if (!hasCodeQROAuthCredentials()) {
-    rejectAuthorize('server_not_configured', clientId);
+    rejectAuthorize(req, 'server_not_configured', clientId);
     redirectWithError(
       res,
       redirectUri,
@@ -521,8 +551,26 @@ async function checkAuthorizeRequest(
   };
 }
 
-function rejectAuthorize(reason: string, clientId?: string): void {
-  logEvent('oauth.consent', { outcome: 'error', reason, clientId });
+function rejectAuthorize(req: Request, reason: string, clientId?: string): void {
+  logEvent('oauth.consent', { outcome: 'error', reason, clientId, ...consentTrace(req, readBinding(req)) });
+}
+
+// The hashes pair these events with the app's without an IP: the state is the
+// one this server handed to CodeQR, so CodeQR sees the same value.
+function consentTrace(req: Request, binding: string | null): Pick<EventFields, 'bindingHash' | 'userAgent'> {
+  return {
+    bindingHash: binding ? hashPrefix(binding) : undefined,
+    userAgent: req.get('user-agent'),
+  };
+}
+
+function callbackTrace(req: Request): Pick<EventFields, 'bindingHash' | 'stateHash'> {
+  const binding = readBinding(req);
+  const { state } = req.query;
+  return {
+    bindingHash: binding ? hashPrefix(binding) : undefined,
+    stateHash: typeof state === 'string' && state !== '' ? hashPrefix(state) : undefined,
+  };
 }
 
 function param(value: unknown): string | undefined {

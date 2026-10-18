@@ -31,7 +31,7 @@ const { createOAuthRouter } = await import('../src/routes/oauth.js');
 const { BINDING_COOKIE } = await import('../src/oauth/browser-binding.js');
 const { requireBearerToken } = await import('../src/middleware/auth.js');
 const { handleToolCall } = await import('../src/routes/mcp.js');
-const { keyHashPrefix } = await import('../src/telemetry.js');
+const { keyHashPrefix, hashPrefix } = await import('../src/telemetry.js');
 
 const mockExchange = vi.mocked(exchangeCodeForCredentials);
 
@@ -684,5 +684,195 @@ describe('handleMcpRequest', () => {
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(rejected()).toHaveLength(1);
     expect(rejected()[0]).toMatchObject({ reason: 'invalid_body', path: '/mcp', status: res.status });
+  });
+});
+
+describe('funnel pairing fields', () => {
+  const USER_AGENT = 'funnel-test-agent/2.0';
+
+  async function approveWith(app: express.Express) {
+    const clientId = await registerClient(app);
+    const { challenge } = pkce();
+    const shown = await request(app)
+      .get('/oauth/authorize')
+      .set('User-Agent', USER_AGENT)
+      .query(authorizeParams(clientId, challenge));
+    const binding = bindingFrom(shown);
+    const response = await request(app)
+      .post('/oauth/authorize')
+      .type('form')
+      .set('User-Agent', USER_AGENT)
+      .set('Cookie', cookieHeader(binding))
+      .send({ ...authorizeParams(clientId, challenge), csrf_token: binding, decision: 'approve' });
+    const brokerState = new URL(response.headers.location).searchParams.get('state')!;
+    return { binding, brokerState };
+  }
+
+  it('consent shown and approve carry bindingHash and userAgent; approve carries the hash of the state sent to CodeQR', async () => {
+    const { binding, brokerState } = await approveWith(makeApp());
+
+    const shown = eventOf('oauth.consent', (l) => l.decision === 'shown')!;
+    const approved = eventOf('oauth.consent', (l) => l.decision === 'approve')!;
+    expect(shown).toMatchObject({ bindingHash: hashPrefix(binding), userAgent: USER_AGENT });
+    expect(approved).toMatchObject({ bindingHash: hashPrefix(binding), userAgent: USER_AGENT });
+    expect(approved.stateHash).toBe(hashPrefix(brokerState));
+    expect(shown.stateHash).toBeUndefined();
+    expect(rawOutput).not.toContain(binding);
+    expect(rawOutput).not.toContain(brokerState);
+  });
+
+  it('binding_mismatch carries userAgent and no bindingHash when there is no cookie', async () => {
+    await request(makeApp()).post('/oauth/authorize').type('form').set('User-Agent', USER_AGENT).send({});
+
+    const event = eventOf('oauth.consent', (l) => l.reason === 'binding_mismatch')!;
+    expect(event.userAgent).toBe(USER_AGENT);
+    expect(event.bindingHash).toBeUndefined();
+  });
+
+  it('callback ok carries stateHash of query.state and bindingHash', async () => {
+    const app = makeApp();
+    const { binding, brokerState } = await approveWith(app);
+
+    await request(app)
+      .get('/oauth/callback')
+      .set('Cookie', cookieHeader(binding))
+      .query({ code: CODEQR_CODE, state: brokerState });
+
+    expect(eventOf('oauth.callback', (l) => l.outcome === 'ok')).toMatchObject({
+      stateHash: hashPrefix(brokerState),
+      bindingHash: hashPrefix(binding),
+    });
+  });
+
+  it('callback expired_or_used and codeqr_access_denied carry stateHash', async () => {
+    const app = makeApp();
+    await request(app).get('/oauth/callback').query({ code: 'c', state: 'never-issued' });
+    const { binding, brokerState } = await approveWith(app);
+    await request(app)
+      .get('/oauth/callback')
+      .set('Cookie', cookieHeader(binding))
+      .query({ error: 'access_denied', state: brokerState });
+
+    expect(eventOf('oauth.callback', (l) => l.reason === 'expired_or_used')!.stateHash).toBe(
+      hashPrefix('never-issued'),
+    );
+    expect(eventOf('oauth.callback', (l) => l.reason === 'codeqr_access_denied')!.stateHash).toBe(
+      hashPrefix(brokerState),
+    );
+  });
+
+  it('callback missing_state carries no stateHash', async () => {
+    await request(makeApp()).get('/oauth/callback').query({ code: 'c' });
+
+    const event = eventOf('oauth.callback', (l) => l.reason === 'missing_state')!;
+    expect(event.stateHash).toBeUndefined();
+  });
+});
+
+describe('MCP funnel fields', () => {
+  const ACCEPT = 'application/json, text/event-stream';
+  const CODEQR_TOKEN = 'cq_live_SECRET_funnel_1111';
+
+  async function bearer() {
+    const { token } = await createAccessToken({
+      clientId: 'client_funnel_1',
+      codeqr: {
+        accessToken: CODEQR_TOKEN,
+        refreshToken: 'cq_refresh_SECRET_funnel',
+        expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+      },
+      scope: 'links',
+    });
+    return token;
+  }
+
+  const rpc = (token: string, body: unknown) =>
+    request(indexApp)
+      .post('/mcp')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Accept', ACCEPT)
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify(body));
+
+  const toolCall = (token: string, _meta?: Record<string, unknown>) =>
+    rpc(token, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'no_such_tool', arguments: {}, ...(_meta ? { _meta } : {}) },
+    });
+
+  it('tool_call carries openaiUserAgent and the hash of the session when _meta has them', async () => {
+    const token = await bearer();
+
+    await toolCall(token, { 'openai/userAgent': 'ChatGPT/1.2', 'openai/session': 'sess-secret-9' });
+
+    const event = eventOf('mcp.tool_call')!;
+    expect(event.openaiUserAgent).toBe('ChatGPT/1.2');
+    expect(event.sessionHash).toBe(hashPrefix('sess-secret-9'));
+    expect(rawOutput).not.toContain('sess-secret-9');
+  });
+
+  it('tool_call omits them when _meta does not', async () => {
+    const token = await bearer();
+
+    await toolCall(token);
+
+    const event = eventOf('mcp.tool_call')!;
+    expect(event.openaiUserAgent).toBeUndefined();
+    expect(event.sessionHash).toBeUndefined();
+  });
+
+  it('initialize logs one mcp.initialize with client and protocol; tools/call logs none', async () => {
+    const token = await bearer();
+
+    await rpc(token, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'openai-mcp', version: '9.9.9' },
+      },
+    });
+
+    const initialized = lines.filter((l) => l.event === 'mcp.initialize');
+    expect(initialized).toHaveLength(1);
+    expect(initialized[0]).toMatchObject({
+      clientId: 'client_funnel_1',
+      keyHashPrefix: keyHashPrefix(CODEQR_TOKEN),
+      protocolVersion: '2025-03-26',
+      clientName: 'openai-mcp',
+      clientVersion: '9.9.9',
+    });
+
+    lines.length = 0;
+    await toolCall(token);
+    expect(lines.filter((l) => l.event === 'mcp.initialize')).toHaveLength(0);
+  });
+
+  it.each(['get', 'delete'] as const)('%s /mcp answers the unknown-path 404 and logs one mcp.rejected', async (method) => {
+    const unknown = await request(indexApp).get('/no-such-path');
+    lines.length = 0;
+
+    const res = await request(indexApp)[method]('/mcp').set('User-Agent', 'probe/3');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual(unknown.body);
+    const rejected = lines.filter((l) => l.event === 'mcp.rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      status: 404,
+      reason: 'not_found',
+      httpMethod: method.toUpperCase(),
+      userAgent: 'probe/3',
+    });
+  });
+
+  it('an unknown path other than /mcp logs nothing', async () => {
+    await request(indexApp).get('/no-such-path');
+
+    expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
   });
 });

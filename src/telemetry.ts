@@ -21,6 +21,7 @@ export type FunnelEvent =
   | 'oauth.consent'
   | 'oauth.callback'
   | 'oauth.token'
+  | 'mcp.initialize'
   | 'mcp.tools_list'
   | 'mcp.tool_call'
   | 'mcp.resource_read'
@@ -55,6 +56,22 @@ export interface EventFields {
   accept?: string;
   protocolVersion?: string;
   hasSession?: boolean;
+  /** See hashPrefix(): the browser-binding cookie of the consent flow. */
+  bindingHash?: string;
+  /** See hashPrefix(): the state this server sent to CodeQR, which CodeQR logs back as the same hash. */
+  stateHash?: string;
+  /** `_meta['openai/userAgent']` of a tool call. */
+  openaiUserAgent?: string;
+  /** See hashPrefix(): `_meta['openai/session']` of a tool call. */
+  sessionHash?: string;
+  clientName?: string;
+  clientVersion?: string;
+  httpMethod?: string;
+  qrType?: string;
+  placeholderDestination?: boolean;
+  hasUtm?: boolean;
+  hasTag?: boolean;
+  hasRules?: boolean;
 }
 
 export const EVENT_FIELDS = [
@@ -77,6 +94,18 @@ export const EVENT_FIELDS = [
   'accept',
   'protocolVersion',
   'hasSession',
+  'bindingHash',
+  'stateHash',
+  'openaiUserAgent',
+  'sessionHash',
+  'clientName',
+  'clientVersion',
+  'httpMethod',
+  'qrType',
+  'placeholderDestination',
+  'hasUtm',
+  'hasTag',
+  'hasRules',
 ] as const satisfies ReadonlyArray<keyof EventFields>;
 
 // A field added to EventFields but not to EVENT_FIELDS would be dropped by
@@ -99,8 +128,13 @@ export const MAX_FIELD_LENGTH = 200;
  */
 export const KEY_HASH_PREFIX_LENGTH = 12;
 
+/** Same SHA-256 prefix everywhere a value must be matched across services without being written. */
+export function hashPrefix(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, KEY_HASH_PREFIX_LENGTH);
+}
+
 export function keyHashPrefix(codeqrToken: string): string {
-  return createHash('sha256').update(codeqrToken).digest('hex').slice(0, KEY_HASH_PREFIX_LENGTH);
+  return hashPrefix(codeqrToken);
 }
 
 /**

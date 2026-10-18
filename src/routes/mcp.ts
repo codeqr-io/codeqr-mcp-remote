@@ -26,7 +26,8 @@ import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
-import { logEvent } from '../telemetry.js';
+import { hashPrefix, logEvent } from '../telemetry.js';
+import { toolIntentFields } from '../tool-intent.js';
 import { readWidget, WIDGET_RESOURCES, withWidgetMeta } from '../widgets/index.js';
 
 // ── Tool Definitions ─────────────────────────────────────────────────────────
@@ -932,6 +933,8 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
       outcome: outcome === 'ok' ? 'ok' : 'error',
       reason: outcome === 'ok' ? undefined : outcome,
       durationMs: Date.now() - startedAt,
+      ...openaiMetaFields(request.params._meta),
+      ...toolIntentFields(name, args as Record<string, unknown> | undefined),
     });
     return result;
   });
@@ -973,6 +976,18 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
       hasSession: Boolean(req.headers['mcp-session-id']),
     });
   });
+
+  const initialize = initializeParams(req.body);
+  if (initialize) {
+    logEvent('mcp.initialize', {
+      clientId: req.oauthClientId,
+      keyHashPrefix: req.keyHashPrefix,
+      protocolVersion: stringOrUndefined(initialize.protocolVersion),
+      clientName: stringOrUndefined(initialize.clientInfo?.name),
+      clientVersion: stringOrUndefined(initialize.clientInfo?.version),
+      userAgent: req.headers['user-agent'],
+    });
+  }
 
   // Handle the request via StreamableHTTP transport
   const transport = new StreamableHTTPServerTransport();
@@ -1061,6 +1076,34 @@ function rpcMethods(body: unknown): string | undefined {
     .map((message) => (typeof message === 'object' && message !== null ? (message as { method?: unknown }).method : undefined))
     .filter((method): method is string => typeof method === 'string');
   return methods.length > 0 ? methods.join(',') : undefined;
+}
+
+const stringOrUndefined = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+interface InitializeParams {
+  protocolVersion?: unknown;
+  clientInfo?: { name?: unknown; version?: unknown };
+}
+
+function initializeParams(body: unknown): InitializeParams | undefined {
+  const messages = Array.isArray(body) ? body : [body];
+  for (const message of messages) {
+    if (typeof message !== 'object' || message === null) continue;
+    const { method, params } = message as { method?: unknown; params?: unknown };
+    if (method === 'initialize') {
+      return typeof params === 'object' && params !== null ? (params as InitializeParams) : {};
+    }
+  }
+  return undefined;
+}
+
+/** Keys per OpenAI's Apps SDK `_meta`; both are optional and other clients send neither. */
+function openaiMetaFields(meta: Record<string, unknown> | undefined) {
+  const session = meta?.['openai/session'];
+  return {
+    openaiUserAgent: stringOrUndefined(meta?.['openai/userAgent']),
+    sessionHash: typeof session === 'string' && session !== '' ? hashPrefix(session) : undefined,
+  };
 }
 
 function headerValue(value: string | string[] | undefined): string | undefined {

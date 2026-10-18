@@ -4,6 +4,7 @@ import {
   EVENT_FIELDS,
   KEY_HASH_PREFIX_LENGTH,
   MAX_FIELD_LENGTH,
+  hashPrefix,
   keyHashPrefix,
   logEvent,
   type EventFields,
@@ -217,5 +218,49 @@ describe('reportSendFailure', () => {
     await settle();
 
     expect(stderrLines).toHaveLength(0);
+  });
+});
+
+describe('hashPrefix', () => {
+  it('matches the cross-repo pairing vector', () => {
+    expect(hashPrefix('codeqr-state-golden-vector')).toBe('19d0091fe384');
+  });
+
+  it('is keyHashPrefix for the same input and KEY_HASH_PREFIX_LENGTH long', () => {
+    expect(keyHashPrefix('tok')).toBe(hashPrefix('tok'));
+    expect(hashPrefix('x')).toHaveLength(KEY_HASH_PREFIX_LENGTH);
+  });
+
+  it('lets the funnel fields through, booleans included', () => {
+    logEvent('mcp.initialize', {
+      bindingHash: 'a',
+      stateHash: 'b',
+      openaiUserAgent: 'c',
+      sessionHash: 'd',
+      clientName: 'e',
+      clientVersion: 'f',
+      httpMethod: 'GET',
+      qrType: 'wifi',
+      placeholderDestination: false,
+      hasUtm: true,
+      hasTag: false,
+      hasRules: true,
+    });
+
+    expect(lines[0]).toMatchObject({
+      event: 'mcp.initialize',
+      bindingHash: 'a',
+      stateHash: 'b',
+      openaiUserAgent: 'c',
+      sessionHash: 'd',
+      clientName: 'e',
+      clientVersion: 'f',
+      httpMethod: 'GET',
+      qrType: 'wifi',
+      placeholderDestination: false,
+      hasUtm: true,
+      hasTag: false,
+      hasRules: true,
+    });
   });
 });

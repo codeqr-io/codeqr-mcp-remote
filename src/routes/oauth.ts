@@ -555,8 +555,9 @@ function rejectAuthorize(req: Request, reason: string, clientId?: string): void 
   logEvent('oauth.consent', { outcome: 'error', reason, clientId, ...consentTrace(req, readBinding(req)) });
 }
 
-// The hashes pair these events with the app's without an IP: the state is the
-// one this server handed to CodeQR, so CodeQR sees the same value.
+// The state hash pairs these events with the app's without an IP, because
+// CodeQR receives the same state. The binding hash only links `shown` to
+// `approve` here, since no state exists yet when the screen is shown.
 function consentTrace(req: Request, binding: string | null): Pick<EventFields, 'bindingHash' | 'userAgent'> {
   return {
     bindingHash: binding ? hashPrefix(binding) : undefined,

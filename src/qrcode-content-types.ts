@@ -1,3 +1,5 @@
+// pix, geo and facetime are left out on purpose: read the note above
+// QRCODE_PAYLOAD_PROPERTIES in routes/mcp.ts before adding one.
 export const QRCODE_CONTENT_TYPES = [
   'url',
   'text',

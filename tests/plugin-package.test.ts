@@ -97,15 +97,18 @@ describe('plugin package URLs', () => {
     }
   });
 
-  it('declares one OAuth server using dynamic client registration', () => {
+  // The Agent Plugins 1.0.0 mcp.schema.json, which this file declares as its
+  // $schema, allows only type, url and headers on a streamable-http server
+  // (additionalProperties: false), so authentication is left to OAuth
+  // discovery and the dashboard.
+  it('declares one streamable-http server with only the keys its schema allows', () => {
     const servers = Object.entries<any>(mcp.mcpServers);
     expect(servers).toHaveLength(1);
     const [name, server] = servers[0];
     expect(name).toBe('codeqr');
     expect(server.type).toBe('streamable-http');
-    const auth = server.extensions['com.openai'].auth;
-    expect(auth.type).toBe('oauth');
-    expect(auth.client).toEqual({ mode: 'dcr' });
+    expect(server.url).toBe('https://mcp.codeqr.io/mcp');
+    for (const key of Object.keys(server)) expect(['type', 'url', 'headers']).toContain(key);
   });
 });
 

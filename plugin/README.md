@@ -18,6 +18,6 @@ The owner uploads `codeqr-plugin.zip` in platform.openai.com, under Plugins, as 
 
 ## Authentication
 
-`mcp.json` declares OAuth with dynamic client registration under `extensions["com.openai"].auth`, as described in "Configure MCP authentication": https://developers.openai.com/plugins/build/plugins#configure-mcp-authentication. The authorization, token and registration endpoints come from OAuth discovery at https://mcp.codeqr.io/.well-known/oauth-authorization-server, so the package carries no overrides, client id or secret.
+`mcp.json` carries no authentication block. Its `$schema`, the Agent Plugins 1.0.0 `mcp.schema.json`, allows only `type`, `url` and `headers` on a streamable-http server, so an `extensions["com.openai"].auth` object there fails validation. The authorization, token and registration endpoints come from OAuth discovery at https://mcp.codeqr.io/.well-known/oauth-authorization-server, where dynamic client registration is advertised.
 
-Before connecting, check in the dashboard that the saved MCP is still `https://mcp.codeqr.io/mcp` with the current client registration. The OpenAI docs warn that an existing client registration can lock credential changes, so an upload does not necessarily replace it.
+Before connecting, check in the dashboard that the saved MCP is still `https://mcp.codeqr.io/mcp`, that its authentication is OAuth with dynamic client registration, and that it keeps the current client registration. The OpenAI docs warn that an existing client registration can lock credential changes, so an upload does not necessarily replace it. If the dashboard asks for the method, choose OAuth with dynamic client registration there.

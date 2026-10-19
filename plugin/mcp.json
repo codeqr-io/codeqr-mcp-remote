@@ -3,17 +3,7 @@
   "mcpServers": {
     "codeqr": {
       "type": "streamable-http",
-      "url": "https://mcp.codeqr.io/mcp",
-      "extensions": {
-        "com.openai": {
-          "auth": {
-            "type": "oauth",
-            "client": {
-              "mode": "dcr"
-            }
-          }
-        }
-      }
+      "url": "https://mcp.codeqr.io/mcp"
     }
   }
 }

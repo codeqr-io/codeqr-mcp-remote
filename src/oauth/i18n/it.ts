@@ -1,0 +1,32 @@
+import type { Messages } from './en.js';
+
+export const it: Messages = {
+  'consent.pageTitle': "Autorizza l'accesso all'API | CodeQR",
+  'consent.request': "<b>{client}</b> chiede l'accesso all'API per un progetto su CodeQR.io.",
+  'consent.verified': 'Verificata da CodeQR.io',
+  'consent.unverified':
+    'CodeQR.io non ha verificato questa applicazione. Continua solo se hai avviato tu questa connessione; se qualcuno ti ha inviato questo link, rifiuta.',
+  'consent.destinationLabel': "L'accesso verrà inviato a:",
+  'consent.destinationLoopback':
+    "Questo indirizzo si trova sul tuo computer, quindi qualsiasi programma in esecuzione su di esso può ricevere l'accesso.",
+  'consent.destinationApp': "Questo indirizzo apre un'app installata su questo dispositivo.",
+  'consent.permissionsLabel': 'Concedi permessi:',
+  'consent.scope.linksRead': 'Accesso in <strong>lettura</strong> ai tuoi link',
+  'consent.scope.linksWrite': 'Accesso in <strong>lettura e scrittura</strong> ai tuoi link',
+  'consent.scope.qrcodesRead': 'Accesso in <strong>lettura</strong> ai tuoi codici QR',
+  'consent.scope.qrcodesWrite': 'Accesso in <strong>lettura e scrittura</strong> ai tuoi codici QR',
+  'consent.scope.analyticsRead': 'Accesso in <strong>lettura</strong> alle tue analisi e ai tuoi eventi',
+  'consent.scope.domainsRead': 'Accesso in <strong>lettura</strong> ai tuoi domini',
+  'consent.scope.tagsRead': 'Accesso in <strong>lettura</strong> ai tuoi tag',
+  'consent.scope.tagsWrite': 'Accesso in <strong>lettura e scrittura</strong> ai tuoi tag',
+  'consent.scope.userRead': "<strong>Leggere</strong> il tuo nome, l'email e l'immagine del profilo",
+  'consent.nextTitle': 'Cosa succede dopo',
+  'consent.nextSignIn': 'Accedi a CodeQR o crea un account gratuito.',
+  'consent.nextProject': 'Scegli il progetto da collegare o creane uno nuovo.',
+  'consent.nextReturnVerified': 'Torni su {client}.',
+  'consent.nextReturnGeneric': "Torni all'app da cui hai iniziato.",
+  'consent.refuse': 'Rifiuta',
+  'consent.continue': 'Continua',
+  'consent.privacy': 'Informativa sulla privacy',
+  'consent.terms': 'Termini di servizio',
+};

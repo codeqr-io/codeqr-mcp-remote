@@ -32,6 +32,8 @@ const { BINDING_COOKIE } = await import('../src/oauth/browser-binding.js');
 const { requireBearerToken } = await import('../src/middleware/auth.js');
 const { handleToolCall } = await import('../src/routes/mcp.js');
 const { keyHashPrefix, hashPrefix } = await import('../src/telemetry.js');
+const { REMEMBER_COOKIE } = await import('../src/oauth/remembered-consent.js');
+const { VERIFIED_CLIENTS } = await import('../src/oauth/verified-clients.js');
 
 const mockExchange = vi.mocked(exchangeCodeForCredentials);
 
@@ -896,5 +898,57 @@ describe('MCP funnel fields', () => {
     await request(indexApp).get('/no-such-path');
 
     expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
+  });
+});
+
+describe('remembered consent events', () => {
+  const USER_AGENT = 'remembered-test-agent/1.0';
+
+  it('logs remembered with bindingHash, userAgent and the hash of the state sent to CodeQR, and never the cookie', async () => {
+    const verifiedRedirect = Object.keys(VERIFIED_CLIENTS)[0]!;
+    const app = makeApp();
+    const { body } = await request(app)
+      .post('/oauth/register')
+      .set('x-real-ip', nextAddress())
+      .send({ client_name: 'Anything', redirect_uris: [verifiedRedirect] });
+    const clientId = body.client_id as string;
+    const { challenge } = pkce();
+    const params = { ...authorizeParams(clientId, challenge), redirect_uri: verifiedRedirect };
+
+    const shown = await request(app).get('/oauth/authorize').query(params);
+    const firstBinding = bindingFrom(shown);
+    const approved = await request(app)
+      .post('/oauth/authorize')
+      .type('form')
+      .set('Cookie', cookieHeader(firstBinding))
+      .send({ ...params, csrf_token: firstBinding, decision: 'approve' });
+    const rememberCookie = ([] as string[])
+      .concat(approved.headers['set-cookie'] ?? [])
+      .find((c) => c.startsWith(`${REMEMBER_COOKIE}=`))!;
+    const rememberId = rememberCookie.slice(REMEMBER_COOKIE.length + 1).split(';')[0];
+
+    const back = await request(app)
+      .get('/oauth/authorize')
+      .set('User-Agent', USER_AGENT)
+      .set('Cookie', `${REMEMBER_COOKIE}=${rememberId}`)
+      .query(params);
+    const binding = bindingFrom(back);
+    const state = new URL(back.headers.location).searchParams.get('state')!;
+
+    expect(eventOf('oauth.consent', (l) => l.decision === 'remembered')).toMatchObject({
+      clientId,
+      client: VERIFIED_CLIENTS[verifiedRedirect]!.name,
+      verified: true,
+      bindingHash: hashPrefix(binding),
+      userAgent: USER_AGENT,
+      stateHash: hashPrefix(state),
+    });
+    expect(lines.filter((l) => l.event === 'oauth.consent').map((l) => l.decision)).toEqual([
+      'shown',
+      'approve',
+      'remembered',
+    ]);
+    expect(rawOutput).not.toContain(rememberId);
+    expect(rawOutput).not.toContain(state);
   });
 });

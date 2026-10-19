@@ -16,22 +16,28 @@ import { PENDING_TTL_SEC } from './store.js';
 
 export const BINDING_COOKIE = '__Host-codeqr_mcp_consent';
 
-const BINDING_LENGTH = 32;
-const BINDING_FORMAT = /^[A-Za-z0-9_-]+$/;
+/** Length of every random value this server keeps in a cookie (nanoid alphabet). */
+export const COOKIE_TOKEN_LENGTH = 32;
+const COOKIE_TOKEN_FORMAT = /^[A-Za-z0-9_-]+$/;
 
-export function readBinding(req: Request): string | null {
+/** The named cookie's value when it has the shape this server issues, else null. */
+export function readCookieToken(req: Request, name: string): string | null {
   const header = req.headers.cookie;
   if (!header) return null;
 
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
-    if (eq === -1 || part.slice(0, eq).trim() !== BINDING_COOKIE) continue;
+    if (eq === -1 || part.slice(0, eq).trim() !== name) continue;
 
     const value = part.slice(eq + 1).trim();
-    return value.length === BINDING_LENGTH && BINDING_FORMAT.test(value) ? value : null;
+    return value.length === COOKIE_TOKEN_LENGTH && COOKIE_TOKEN_FORMAT.test(value) ? value : null;
   }
 
   return null;
+}
+
+export function readBinding(req: Request): string | null {
+  return readCookieToken(req, BINDING_COOKIE);
 }
 
 /**
@@ -40,7 +46,7 @@ export function readBinding(req: Request): string | null {
  * outlives the pending authorization it is about to be recorded in.
  */
 export function issueBinding(req: Request, res: Response): string {
-  const binding = readBinding(req) ?? nanoid(BINDING_LENGTH);
+  const binding = readBinding(req) ?? nanoid(COOKIE_TOKEN_LENGTH);
 
   res.cookie(BINDING_COOKIE, binding, {
     httpOnly: true,

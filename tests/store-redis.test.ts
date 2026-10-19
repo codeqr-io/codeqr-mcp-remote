@@ -112,3 +112,23 @@ describe('access tokens on Redis', () => {
     expect(await store.validateAccessToken(token)).toBeNull();
   });
 });
+
+describe('remembered consent on Redis', () => {
+  it('keeps the record for as long as it is remembered, and forgets it on request', async () => {
+    const id = 'm'.repeat(32);
+    const record = { clientId: 'client_test', redirectUri: 'https://chatgpt.test/cb', scopeVersion: 'v1' };
+
+    await store.saveRememberedConsent(id, record);
+    const key = [...fake.data.keys()].find((k) => k.endsWith(id))!;
+    const ttlMs = fake.data.get(key)!.expiresAt! - Date.now();
+
+    expect(ttlMs).toBeGreaterThan((store.REMEMBERED_CONSENT_TTL_SEC - 60) * 1000);
+    expect(ttlMs).toBeLessThanOrEqual(store.REMEMBERED_CONSENT_TTL_SEC * 1000);
+    expect(await store.getRememberedConsent(id)).toMatchObject(record);
+
+    await store.forgetRememberedConsent(id);
+
+    expect(fake.data.has(key)).toBe(false);
+    expect(await store.getRememberedConsent(id)).toBeNull();
+  });
+});

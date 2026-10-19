@@ -1,0 +1,32 @@
+import type { Messages } from './en.js';
+
+export const fr: Messages = {
+  'consent.pageTitle': "Autoriser l'accès à l'API | CodeQR",
+  'consent.request': "<b>{client}</b> demande l'accès à l'API d'un projet sur CodeQR.io.",
+  'consent.verified': 'Vérifiée par CodeQR.io',
+  'consent.unverified':
+    "CodeQR.io n'a pas vérifié cette application. Continuez uniquement si vous avez lancé cette connexion vous-même ; si quelqu'un vous a envoyé ce lien, refusez.",
+  'consent.destinationLabel': "L'accès sera envoyé à :",
+  'consent.destinationLoopback':
+    "Cette adresse se trouve sur votre propre ordinateur : tout programme qui s'y exécute peut donc recevoir l'accès.",
+  'consent.destinationApp': 'Cette adresse ouvre une application installée sur cet appareil.',
+  'consent.permissionsLabel': 'Accorder les permissions :',
+  'consent.scope.linksRead': 'Accès en <strong>lecture</strong> à vos liens',
+  'consent.scope.linksWrite': 'Accès en <strong>lecture et écriture</strong> à vos liens',
+  'consent.scope.qrcodesRead': 'Accès en <strong>lecture</strong> à vos QR codes',
+  'consent.scope.qrcodesWrite': 'Accès en <strong>lecture et écriture</strong> à vos QR codes',
+  'consent.scope.analyticsRead': 'Accès en <strong>lecture</strong> à vos statistiques et événements',
+  'consent.scope.domainsRead': 'Accès en <strong>lecture</strong> à vos domaines',
+  'consent.scope.tagsRead': 'Accès en <strong>lecture</strong> à vos étiquettes',
+  'consent.scope.tagsWrite': 'Accès en <strong>lecture et écriture</strong> à vos étiquettes',
+  'consent.scope.userRead': '<strong>Lire</strong> votre nom, votre e-mail et votre photo de profil',
+  'consent.nextTitle': 'Les prochaines étapes',
+  'consent.nextSignIn': 'Connectez-vous à CodeQR ou créez un compte gratuit.',
+  'consent.nextProject': 'Choisissez le projet à connecter ou créez-en un nouveau.',
+  'consent.nextReturnVerified': 'Vous revenez sur {client}.',
+  'consent.nextReturnGeneric': "Vous revenez sur l'application depuis laquelle vous avez commencé.",
+  'consent.refuse': 'Refuser',
+  'consent.continue': 'Continuer',
+  'consent.privacy': 'Politique de confidentialité',
+  'consent.terms': "Conditions d'utilisation",
+};

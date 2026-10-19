@@ -1,0 +1,32 @@
+import type { Messages } from './en.js';
+
+export const ptBr: Messages = {
+  'consent.pageTitle': 'Autorizar acesso à API | CodeQR',
+  'consent.request': '<b>{client}</b> está solicitando acesso à API de um projeto na CodeQR.io.',
+  'consent.verified': 'Verificado pela CodeQR.io',
+  'consent.unverified':
+    'A CodeQR.io não verificou este aplicativo. Continue somente se foi você quem iniciou esta conexão; se alguém enviou este link para você, recuse.',
+  'consent.destinationLabel': 'O acesso será enviado para:',
+  'consent.destinationLoopback':
+    'Este endereço fica no seu próprio computador, então qualquer programa em execução nele pode receber o acesso.',
+  'consent.destinationApp': 'Este endereço abre um aplicativo instalado neste dispositivo.',
+  'consent.permissionsLabel': 'Conceder permissões:',
+  'consent.scope.linksRead': 'Acesso de <strong>leitura</strong> aos seus links',
+  'consent.scope.linksWrite': 'Acesso de <strong>leitura e escrita</strong> aos seus links',
+  'consent.scope.qrcodesRead': 'Acesso de <strong>leitura</strong> aos seus QR Codes',
+  'consent.scope.qrcodesWrite': 'Acesso de <strong>leitura e escrita</strong> aos seus QR Codes',
+  'consent.scope.analyticsRead': 'Acesso de <strong>leitura</strong> às suas análises e eventos',
+  'consent.scope.domainsRead': 'Acesso de <strong>leitura</strong> aos seus domínios',
+  'consent.scope.tagsRead': 'Acesso de <strong>leitura</strong> às suas tags',
+  'consent.scope.tagsWrite': 'Acesso de <strong>leitura e escrita</strong> às suas tags',
+  'consent.scope.userRead': '<strong>Ler</strong> seu nome, e-mail e foto de perfil',
+  'consent.nextTitle': 'O que acontece a seguir',
+  'consent.nextSignIn': 'Entre na CodeQR ou crie uma conta gratuita.',
+  'consent.nextProject': 'Escolha o projeto a conectar ou crie um novo.',
+  'consent.nextReturnVerified': 'Você volta para o {client}.',
+  'consent.nextReturnGeneric': 'Você volta para o app em que começou.',
+  'consent.refuse': 'Recusar',
+  'consent.continue': 'Continuar',
+  'consent.privacy': 'Política de Privacidade',
+  'consent.terms': 'Termos de Serviço',
+};

@@ -1,0 +1,31 @@
+import type { Messages } from './en.js';
+
+export const zh: Messages = {
+  'consent.pageTitle': '授权 API 访问 | CodeQR',
+  'consent.request': '<b>{client}</b> 正在请求访问您在 CodeQR.io 上某个项目的 API。',
+  'consent.verified': '已通过 CodeQR.io 验证',
+  'consent.unverified':
+    'CodeQR.io 尚未验证此应用程序。只有当这个连接是您自己发起的时才继续；如果是别人发给您的链接，请拒绝。',
+  'consent.destinationLabel': '访问权限将发送至：',
+  'consent.destinationLoopback': '此地址位于您自己的电脑上，因此电脑上运行的任何程序都可能获得该访问权限。',
+  'consent.destinationApp': '此地址会打开此设备上安装的某个应用。',
+  'consent.permissionsLabel': '授予权限：',
+  'consent.scope.linksRead': '<strong>读取</strong>您的链接',
+  'consent.scope.linksWrite': '<strong>读取和写入</strong>您的链接',
+  'consent.scope.qrcodesRead': '<strong>读取</strong>您的二维码',
+  'consent.scope.qrcodesWrite': '<strong>读取和写入</strong>您的二维码',
+  'consent.scope.analyticsRead': '<strong>读取</strong>您的分析数据和事件',
+  'consent.scope.domainsRead': '<strong>读取</strong>您的域名',
+  'consent.scope.tagsRead': '<strong>读取</strong>您的标签',
+  'consent.scope.tagsWrite': '<strong>读取和写入</strong>您的标签',
+  'consent.scope.userRead': '<strong>读取</strong>您的姓名、电子邮件和头像',
+  'consent.nextTitle': '接下来',
+  'consent.nextSignIn': '登录 CodeQR，或免费注册一个账户。',
+  'consent.nextProject': '选择要连接的项目，或新建一个。',
+  'consent.nextReturnVerified': '返回 {client}。',
+  'consent.nextReturnGeneric': '返回您发起连接的应用。',
+  'consent.refuse': '拒绝',
+  'consent.continue': '继续',
+  'consent.privacy': '隐私政策',
+  'consent.terms': '服务条款',
+};

@@ -45,6 +45,8 @@ import { verifyCodeChallenge } from '../oauth/pkce.js';
 import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-oauth.js';
 import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding.js';
 import { sendConsentPage } from '../oauth/consent-page.js';
+import { resolveLocale } from '../oauth/i18n/index.js';
+import { isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
 import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
@@ -138,6 +140,11 @@ export function createOAuthRouter(): Router {
     const request = await checkAuthorizeRequest(req, req.query, res);
     if (!request) return;
 
+    if (await isRemembered(req, request)) {
+      await approveAuthorization(req, res, request, 'remembered');
+      return;
+    }
+
     const binding = issueBinding(req, res);
 
     logEvent('oauth.consent', {
@@ -151,6 +158,7 @@ export function createOAuthRouter(): Router {
       clientName: request.client.clientName,
       redirectUri: request.redirectUri,
       scopes: CODEQR_OAUTH_SCOPES,
+      locale: resolveLocale(req),
       fields: {
         client_id: request.client.clientId,
         redirect_uri: request.redirectUri,
@@ -182,13 +190,11 @@ export function createOAuthRouter(): Router {
     const request = await checkAuthorizeRequest(req, body, res);
     if (!request) return;
 
-    const identity = clientIdentity(request.redirectUri, request.client.clientName);
-
     if (param(body.decision) !== 'approve') {
       logEvent('oauth.consent', {
         decision: 'deny',
         clientId: request.client.clientId,
-        ...identity,
+        ...clientIdentity(request.redirectUri, request.client.clientName),
         ...consentTrace(req, binding),
       });
       redirectWithError(
@@ -202,35 +208,8 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    // Park everything the callback will need. The client's own state travels
-    // inside this record instead of over to CodeQR, so a callback carrying
-    // someone else's state cannot be replayed into this session.
-    const brokerState = await createPendingAuthorization({
-      clientId: request.client.clientId,
-      redirectUri: request.redirectUri,
-      codeChallenge: request.codeChallenge,
-      codeChallengeMethod: request.codeChallengeMethod,
-      clientState: request.clientState,
-      scope: request.scope,
-      browserBinding: issueBinding(req, res),
-    });
-
-    logEvent('oauth.consent', {
-      decision: 'approve',
-      clientId: request.client.clientId,
-      ...identity,
-      ...consentTrace(req, binding),
-      stateHash: hashPrefix(brokerState),
-    });
-
-    res.redirect(
-      303,
-      buildAuthorizeUrl({
-        redirectUri: getCallbackUrl(req),
-        state: brokerState,
-        mcpClient: mcpClientLabel(request.redirectUri),
-      }),
-    );
+    await rememberApproval(req, res, request);
+    await approveAuthorization(req, res, request, 'approve');
   });
 
   // ── Callback from CodeQR ───────────────────────────────────────────────────
@@ -549,6 +528,53 @@ async function checkAuthorizeRequest(
     clientState,
     scope: scope || 'mcp:tools',
   };
+}
+
+/**
+ * The approval path, whether the user just pressed Continue or approved this
+ * client in this browser before (see remembered-consent.ts).
+ */
+async function approveAuthorization(
+  req: Request,
+  res: Response,
+  request: AuthorizeRequest,
+  decision: 'approve' | 'remembered',
+): Promise<void> {
+  // Reuses the binding the consent form was checked against, or issues one
+  // when the screen was skipped; either way the callback must present it.
+  const binding = issueBinding(req, res);
+
+  // Park everything the callback will need. The client's own state travels
+  // inside this record instead of over to CodeQR, so a callback carrying
+  // someone else's state cannot be replayed into this session.
+  const brokerState = await createPendingAuthorization({
+    clientId: request.client.clientId,
+    redirectUri: request.redirectUri,
+    codeChallenge: request.codeChallenge,
+    codeChallengeMethod: request.codeChallengeMethod,
+    clientState: request.clientState,
+    scope: request.scope,
+    browserBinding: binding,
+  });
+
+  logEvent('oauth.consent', {
+    decision,
+    clientId: request.client.clientId,
+    ...clientIdentity(request.redirectUri, request.client.clientName),
+    ...consentTrace(req, binding),
+    stateHash: hashPrefix(brokerState),
+  });
+
+  // A redirect answering a GET carries a one-time state, so no cache may replay it.
+  res.set('Cache-Control', 'no-store');
+  res.redirect(
+    303,
+    buildAuthorizeUrl({
+      redirectUri: getCallbackUrl(req),
+      state: brokerState,
+      mcpClient: mcpClientLabel(request.redirectUri),
+    }),
+  );
 }
 
 function rejectAuthorize(req: Request, reason: string, clientId?: string): void {

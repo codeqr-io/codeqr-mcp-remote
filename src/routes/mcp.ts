@@ -23,6 +23,13 @@ import { config, isUiEnabled, SERVER_VERSION } from '../config.js';
 import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
+import {
+  DOMAINS_MAX_PAGE_SIZE,
+  listsNoCustomDomains,
+  NO_CUSTOM_DOMAINS_NOTE,
+  TAGS_MAX_PAGE_SIZE,
+  withPageSizeInRange,
+} from '../list-tools.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
 import { placeholderDestinationIn, placeholderRefusal } from '../placeholder-destination.js';
 import { toClientFacingError } from '../plan-limit-message.js';
@@ -650,13 +657,19 @@ export const TOOLS = [
     name: 'list_domains',
     title: 'List Custom Domains',
     annotations: READ_ONLY,
-    description: 'List custom domains configured in your workspace',
+    description:
+      "List the custom domains configured in your workspace. Shared short domains are not listed; leaving domain out when creating a link or QR code uses the workspace's default.",
     inputSchema: {
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: 'Search keyword (optional)' },
         page: { type: 'number', description: 'Page number (optional)' },
-        pageSize: { type: 'number', description: 'Results per page (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: DOMAINS_MAX_PAGE_SIZE,
+          description: 'Results per page (optional)',
+        },
       },
     },
   },
@@ -670,7 +683,12 @@ export const TOOLS = [
       properties: {
         search: { type: 'string', description: 'Search keyword (optional)' },
         page: { type: 'number', description: 'Page number (optional)' },
-        pageSize: { type: 'number', description: 'Results per page (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: TAGS_MAX_PAGE_SIZE,
+          description: 'Results per page (optional)',
+        },
       },
     },
   },
@@ -861,10 +879,14 @@ export async function handleToolCall(
       // and `pageSize` never reached the API and a workspace with more items
       // than one page reported a truncated list as if it were complete.
       case 'list_domains':
-        result = await client.domains.list(asParams<Codeqr.DomainListParams>(args));
+        result = await client.domains.list(
+          asParams<Codeqr.DomainListParams>(withPageSizeInRange(args, DOMAINS_MAX_PAGE_SIZE)),
+        );
         break;
       case 'list_tags':
-        result = await client.tags.list(asParams<Codeqr.TagListParams>(args));
+        result = await client.tags.list(
+          asParams<Codeqr.TagListParams>(withPageSizeInRange(args, TAGS_MAX_PAGE_SIZE)),
+        );
         break;
       case 'create_tag':
         result = await client.tags.create(asParams<Codeqr.TagCreateParams>(args));
@@ -881,14 +903,18 @@ export async function handleToolCall(
     }
 
     onOutcome?.('ok');
-    return await withCreatedNoteAndCard(name, cardArgs, result, apiKey);
+    const response = await withCreatedNoteAndCard(name, cardArgs, result, apiKey);
+    if (name === 'list_domains' && listsNoCustomDomains(args, result)) {
+      response.content.push({ type: 'text', text: NO_CUSTOM_DOMAINS_NOTE });
+    }
+    return response;
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
     // one point rather than per tool. The `Error:` prefix is kept for every
     // class alike, a plan gate included: the two local validation branches
     // above carry it too, and a text format that varies with the class of
     // failure is one more thing the next reader has to discover.
-    const { message, isPlanLimit } = toClientFacingError(error);
+    const { message, isPlanLimit } = toClientFacingError(error, { tool: name, args });
     onOutcome?.(isPlanLimit ? 'plan_limit' : 'api_error');
     return {
       content: [{ type: 'text', text: `Error: ${message}` }],

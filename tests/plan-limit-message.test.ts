@@ -15,6 +15,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { APIError } from '@codeqr/ts';
 import { toClientFacingError, LIMIT_DETAILS_URL } from '../src/plan-limit-message.js';
 import { handleToolCall, SERVER_INSTRUCTIONS, TOOLS } from '../src/routes/mcp.js';
 
@@ -135,11 +136,27 @@ describe('a plan gate', () => {
     // `lib/shared-domains.ts` raises this one as a 422.
     const { message, isPlanLimit } = toClientFacingError(
       apiError(422, 'unprocessable_entity', PLAN_GATES[8]),
+      { tool: 'create_link', args: { url: 'https://example.com', domain: 'example.sh' } },
     );
 
     expect(isPlanLimit).toBe(true);
     expect(message).not.toMatch(/upgrade/i);
     expect(message).toMatch(/domain/i);
+  });
+
+  it('points at list_domains only for a call that named a domain, and never from list_domains', () => {
+    const gate = apiError(403, 'forbidden', PLAN_GATES[8]);
+    const named = toClientFacingError(gate, { tool: 'create_qrcode', args: { domain: 'example.sh' } });
+    const unnamed = toClientFacingError(gate, { tool: 'create_link', args: { url: 'https://example.com' } });
+    const itself = toClientFacingError(gate, { tool: 'list_domains', args: { domain: 'example.sh' } });
+    const noCall = toClientFacingError(gate);
+
+    expect(named.message).toContain('list_domains');
+    for (const { message, isPlanLimit } of [unnamed, itself, noCall]) {
+      expect(isPlanLimit).toBe(true);
+      expect(message).not.toContain('list_domains');
+      expect(message).toContain(LIMIT_DETAILS_URL);
+    }
   });
 });
 
@@ -306,6 +323,28 @@ describe('everything that is not a plan gate', () => {
 
   it('survives something that is not an Error at all', () => {
     expect(toClientFacingError('boom').message).toBe('boom');
+  });
+
+  it('never reads a response the API did not write as a plan gate', () => {
+    // Built by the SDK's own class the way it handles a body that is not JSON:
+    // `error` undefined, the whole body in `message` after the status.
+    const page =
+      '<!DOCTYPE html><html><body><h1>404</h1><a href="/pricing">Upgrade to Pro</a> Custom domains stay with the paid plan.</body></html>';
+    for (const error of [
+      APIError.generate(404, undefined, page, new Headers()),
+      APIError.generate(502, undefined, '', new Headers()),
+    ]) {
+      const { message, isPlanLimit } = toClientFacingError(error, {
+        tool: 'create_link',
+        args: { domain: 'example.sh' },
+      });
+
+      expect(isPlanLimit).toBe(false);
+      expect(message).toContain(`HTTP ${error.status}`);
+      expect(message).not.toMatch(FORBIDDEN);
+      expect(message).not.toContain('<');
+      expect(message).not.toContain('list_domains');
+    }
   });
 });
 

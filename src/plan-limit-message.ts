@@ -103,7 +103,8 @@ const CAPABILITIES: ReadonlyArray<readonly [RegExp, string]> = [
 
 /**
  * Broad enough to mis-attribute a cause — a domain quota reads as a domain
- * that is out of reach — so it runs after everything that can be read exactly.
+ * that is out of reach — so it runs after everything that can be read exactly,
+ * and only for a call that named a domain (`namedDomain`).
  */
 const BROAD_CAPABILITIES: ReadonlyArray<readonly [RegExp, string]> = [
   [
@@ -144,6 +145,30 @@ function property(source: unknown, key: string): unknown {
     : undefined;
 }
 
+/** The tool call an error came from. */
+export interface ToolCall {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
+// The domain pointer answers a domain the call chose. Without one there is
+// nothing for list_domains to correct, and on list_domains itself the pointer
+// sends the model straight back to the call that just failed.
+function namedDomain(call: ToolCall | undefined): boolean {
+  if (!call || call.tool === 'list_domains') return false;
+  const { domain } = call.args;
+  return typeof domain === 'string' && domain.trim() !== '';
+}
+
+/**
+ * Whether the body the SDK parsed is the API's error envelope,
+ * `{ error: { code, message } }`. For a body that is not JSON the SDK leaves
+ * `error` undefined and puts the whole body in `message`, after the status.
+ */
+function hasApiErrorBody(error: unknown): boolean {
+  return typeof property(property(property(error, 'error'), 'error'), 'code') === 'string';
+}
+
 /**
  * Read structurally rather than with `instanceof APIError`: the SDK ships CJS
  * and ESM builds, so an error can fail the instance check while carrying
@@ -179,10 +204,22 @@ function withDetails(sentence: string): string {
 /**
  * Rewrite an error from the CodeQR API into something a tool result can carry.
  *
- * Returns the original message unchanged for everything that is not a plan
- * gate, so an ordinary failure still says what actually went wrong.
+ * Returns the API's message unchanged for everything that is not a plan gate,
+ * so an ordinary failure still says what actually went wrong.
  */
-export function toClientFacingError(error: unknown): ClientFacingError {
+export function toClientFacingError(error: unknown, call?: ToolCall): ClientFacingError {
+  // A response the API did not write, such as the host's HTML 404 page for a
+  // route that does not exist, carries the site's navigation and pricing copy,
+  // which matches every plan word below. It is not a refusal, and none of its
+  // text belongs in a tool result.
+  const status = property(error, 'status');
+  if (typeof status === 'number' && !hasApiErrorBody(error)) {
+    return {
+      message: `The CodeQR API answered with HTTP ${status} and no error details, so the request could not be completed.`,
+      isPlanLimit: false,
+    };
+  }
+
   const raw = rawMessage(error);
   const code = errorCode(error, raw);
 
@@ -233,7 +270,9 @@ export function toClientFacingError(error: unknown): ClientFacingError {
   }
 
   const capability =
-    firstMatch(CAPABILITIES, raw) ?? fromPhrase(raw) ?? firstMatch(BROAD_CAPABILITIES, raw);
+    firstMatch(CAPABILITIES, raw) ??
+    fromPhrase(raw) ??
+    (namedDomain(call) ? firstMatch(BROAD_CAPABILITIES, raw) : undefined);
 
   // A phrase lifted out of the API's own sentence could carry a tier name with
   // it; the generic sentence is the safe answer when it does.

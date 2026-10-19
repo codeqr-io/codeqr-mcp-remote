@@ -29,4 +29,10 @@ export const es: Messages = {
   'consent.continue': 'Continuar',
   'consent.privacy': 'Política de privacidad',
   'consent.terms': 'Términos del servicio',
+  'handoff.pageTitle': 'Volver a tu app | CodeQR',
+  'handoff.successVerified': 'Conectado a CodeQR. Toca para volver a {client}.',
+  'handoff.successGeneric': 'Conectado a CodeQR. Toca para volver a tu app.',
+  'handoff.errorVerified': 'La conexión no se completó. Toca para volver a {client}.',
+  'handoff.errorGeneric': 'La conexión no se completó. Toca para volver a tu app.',
+  'handoff.button': 'Volver',
 };

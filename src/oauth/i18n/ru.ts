@@ -29,4 +29,10 @@ export const ru: Messages = {
   'consent.continue': 'Продолжить',
   'consent.privacy': 'Политика конфиденциальности',
   'consent.terms': 'Условия использования',
+  'handoff.pageTitle': 'Возврат в приложение | CodeQR',
+  'handoff.successVerified': 'Подключение к CodeQR выполнено. Нажмите, чтобы вернуться в {client}.',
+  'handoff.successGeneric': 'Подключение к CodeQR выполнено. Нажмите, чтобы вернуться в приложение.',
+  'handoff.errorVerified': 'Подключение не завершено. Нажмите, чтобы вернуться в {client}.',
+  'handoff.errorGeneric': 'Подключение не завершено. Нажмите, чтобы вернуться в приложение.',
+  'handoff.button': 'Вернуться',
 };

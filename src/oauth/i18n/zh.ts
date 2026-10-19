@@ -28,4 +28,10 @@ export const zh: Messages = {
   'consent.continue': '继续',
   'consent.privacy': '隐私政策',
   'consent.terms': '服务条款',
+  'handoff.pageTitle': '返回应用 | CodeQR',
+  'handoff.successVerified': '已连接到 CodeQR。点按即可返回 {client}。',
+  'handoff.successGeneric': '已连接到 CodeQR。点按即可返回您的应用。',
+  'handoff.errorVerified': '连接未完成。点按即可返回 {client}。',
+  'handoff.errorGeneric': '连接未完成。点按即可返回您的应用。',
+  'handoff.button': '返回',
 };

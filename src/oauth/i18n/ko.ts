@@ -29,4 +29,10 @@ export const ko: Messages = {
   'consent.continue': '계속',
   'consent.privacy': '개인정보 처리방침',
   'consent.terms': '서비스 약관',
+  'handoff.pageTitle': '앱으로 돌아가기 | CodeQR',
+  'handoff.successVerified': 'CodeQR에 연결되었습니다. 탭하여 {client}(으)로 돌아가세요.',
+  'handoff.successGeneric': 'CodeQR에 연결되었습니다. 탭하여 앱으로 돌아가세요.',
+  'handoff.errorVerified': '연결이 완료되지 않았습니다. 탭하여 {client}(으)로 돌아가세요.',
+  'handoff.errorGeneric': '연결이 완료되지 않았습니다. 탭하여 앱으로 돌아가세요.',
+  'handoff.button': '돌아가기',
 };

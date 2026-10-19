@@ -33,6 +33,13 @@ export const en = {
   'consent.continue': 'Continue',
   'consent.privacy': 'Privacy Policy',
   'consent.terms': 'Terms of Service',
+  // Shown on mobile in place of the automatic redirect back to the client.
+  'handoff.pageTitle': 'Back to your app | CodeQR',
+  'handoff.successVerified': 'Connected to CodeQR. Tap to go back to {client}.',
+  'handoff.successGeneric': 'Connected to CodeQR. Tap to go back to your app.',
+  'handoff.errorVerified': 'The connection was not completed. Tap to go back to {client}.',
+  'handoff.errorGeneric': 'The connection was not completed. Tap to go back to your app.',
+  'handoff.button': 'Go back',
 } as const satisfies Record<string, string>;
 
 export type MessageKey = keyof typeof en;

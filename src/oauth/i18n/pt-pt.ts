@@ -29,4 +29,10 @@ export const ptPt: Messages = {
   'consent.continue': 'Continuar',
   'consent.privacy': 'Política de Privacidade',
   'consent.terms': 'Termos de Serviço',
+  'handoff.pageTitle': 'Regressar à app | CodeQR',
+  'handoff.successVerified': 'Ligado à CodeQR. Toque para regressar ao {client}.',
+  'handoff.successGeneric': 'Ligado à CodeQR. Toque para regressar à sua app.',
+  'handoff.errorVerified': 'A ligação não foi concluída. Toque para regressar ao {client}.',
+  'handoff.errorGeneric': 'A ligação não foi concluída. Toque para regressar à sua app.',
+  'handoff.button': 'Regressar',
 };

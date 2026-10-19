@@ -152,7 +152,7 @@ describe('the list_domains pointer on a domain gate', () => {
     json({ error: { code: 'forbidden', message: DOMAIN_GATE, doc_url: 'https://codeqr.io/docs/api-reference' } }, 403);
 
   it('is given to a create_link that named the domain', async () => {
-    const { outcome, text } = await call(gate, 'create_link', { url: 'https://example.com', domain: 'example.sh' });
+    const { outcome, text } = await call(gate, 'create_link', { url: 'https://acme.test', domain: 'example.sh' });
 
     expect(outcome).toBe('plan_limit');
     expect(text).toContain('list_domains');
@@ -161,7 +161,7 @@ describe('the list_domains pointer on a domain gate', () => {
 
   it('is not given when the call left domain out, or when list_domains itself was refused', async () => {
     const calls: Array<[string, Record<string, unknown>]> = [
-      ['create_link', { url: 'https://example.com' }],
+      ['create_link', { url: 'https://acme.test' }],
       ['list_domains', {}],
     ];
     for (const [name, args] of calls) {

@@ -4,7 +4,7 @@
   browser. `yarn widgets:build --html` writes the pages to web/dev/out/, then
   serve web/dev (for example `python3 -m http.server -d web/dev 8790`) and open
   harness.html?fixture=qr&theme=dark&locale=pt-BR&width=375
-  Item card fixtures: qr, static, wifi, noimage, link.
+  Item card fixtures: qr, static, staticwifi, wifi, noimage, link.
   Analytics fixtures (widget=analytics): count, composite, domain, timeseries, countries, top_qrcodes; the
   chips' tools/call is answered with the same shape for the chosen interval.
 -->
@@ -44,6 +44,7 @@
         qr: { structuredContent: qr, _meta: meta(qrImage, 'qrcodes') },
         static: { structuredContent: { ...qr, isStatic: true, scans: undefined }, _meta: meta(qrImage, 'qrcodes') },
         wifi: { structuredContent: { ...qr, title: 'Office Wi-Fi', type: 'wifi', destination: undefined }, _meta: meta(qrImage, 'qrcodes') },
+        staticwifi: { structuredContent: { ...qr, title: null, type: 'wifi', destination: undefined, isStatic: true, scans: undefined }, _meta: meta(qrImage, 'qrcodes') },
         noimage: { structuredContent: qr, _meta: meta(undefined, 'qrcodes') },
         link: {
           structuredContent: { kind: 'link', id: 'link_demo', shortLink: 'https://cqr.ink/launch', title: null, isStatic: false, archived: false, destination: 'https://example.com/launch-week', clicks: 87 },

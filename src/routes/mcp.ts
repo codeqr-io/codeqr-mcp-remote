@@ -28,7 +28,14 @@ import { placeholderDestinationIn, placeholderRefusal } from '../placeholder-des
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { hashPrefix, logEvent } from '../telemetry.js';
-import { DEFAULT_QRCODE_TYPE, QRCODE_CONTENT_TYPES } from '../qrcode-content-types.js';
+import {
+  DEFAULT_QRCODE_TYPE,
+  QRCODE_CONTENT_TYPES,
+  STATIC_QRCODE_TYPES,
+  WIFI_OPEN_NETWORK,
+  WIFI_SECURED_ENCRYPTIONS,
+} from '../qrcode-content-types.js';
+import { prepareStaticQrCode, STATIC_TYPES_IN_WORDS } from '../static-qrcode.js';
 import { toolIntentFields } from '../tool-intent.js';
 import { readWidget, WIDGET_RESOURCES, withWidgetMeta } from '../widgets/index.js';
 
@@ -78,8 +85,10 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * The field names below are therefore not guesses: each one is what the display
  * page a dynamic scan lands on actually reads. That page, not
  * `qrCodeConstructor`, is the reference — the constructor encodes content into
- * the printed pattern, which is the static path, and this tool only creates
- * dynamic codes. Where the two disagree, the page wins: it reads
+ * the printed pattern, which is the static path, and only STATIC_QRCODE_TYPES
+ * take that path here; for those, the constructor reads the same names
+ * (`lib/utils/functions/qrcode-constructor.ts` and `to-vcard-format.ts` in the
+ * CodeQR repo). Where the two disagree, the page wins: it reads
  * `crypto.address` while the constructor reads `crypto.email`, and it renders a
  * second work number from `vcard.telephone` that the constructor has no branch
  * for. Only the first of those can produce a wrong result, since `telephone` is
@@ -147,8 +156,8 @@ const QRCODE_PAYLOAD_PROPERTIES = {
       // ones here rather than matching that.
       encryption: {
         type: 'string',
-        enum: ['WPA', 'WPA2', 'WEP', 'nopass'],
-        description: 'Security type. Use "nopass" for an open network',
+        enum: [...WIFI_SECURED_ENCRYPTIONS, WIFI_OPEN_NETWORK],
+        description: `Security type. Use "${WIFI_OPEN_NETWORK}" for an open network`,
       },
       // `isHidden` is not offered, and cannot be until the app changes. The
       // payload is validated as `z.record(z.string())`, so a boolean is
@@ -186,7 +195,7 @@ const QRCODE_PAYLOAD_PROPERTIES = {
       // CodeQR reads the wallet address from two different fields depending on
       // how the code is scanned: the display page every dynamic code lands on
       // reads `crypto.address`, while `qrCodeConstructor` — the static path —
-      // reads `crypto.email`. This tool only creates dynamic codes, so
+      // reads `crypto.email`. A crypto code is never static here, so
       // `address` is the one that has to be filled; sending `email` produces a
       // page reading "No crypto payment information available".
       address: { type: 'string', description: 'The destination wallet address' },
@@ -218,9 +227,10 @@ const QRCODE_PAYLOAD_PROPERTIES = {
 // opening of this string.
 export const SERVER_INSTRUCTIONS = [
   'You are connected to CodeQR via MCP.',
-  'Every short link and QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
+  'Every short link and dynamic QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
   'A link, or a QR code that opens a web page, needs the real destination from the person: if they have not given one, ask for it before creating anything. Never invent an address or use a placeholder such as example.com; CodeQR refuses those.',
   'Codes for Wi-Fi, a contact card or plain text need no web address.',
+  'Those three can be made static when the person asks: a static code holds its content, so it can never be changed and its scans are not counted.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
@@ -480,7 +490,7 @@ export const TOOLS = [
     title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
-      'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.',
+      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -504,6 +514,10 @@ export const TOOLS = [
           type: 'string',
           description:
             'Title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code" (optional).',
+        },
+        static: {
+          type: 'boolean',
+          description: `Encode the content itself instead of a short link (optional; only for type ${STATIC_TYPES_IN_WORDS}). A static code works with no CodeQR link in between, but once shared or printed it can never be changed and its scans are not counted. Leave it out unless the person asks for a static code. A static wifi code needs wifi.encryption, and wifi.password unless the network is open.`,
         },
         walletPass: WALLET_PASS_SCHEMA,
       },
@@ -805,14 +819,20 @@ export async function handleToolCall(
       case 'delete_link':
         result = await client.links.delete(args.linkId as string);
         break;
-      case 'create_qrcode':
+      case 'create_qrcode': {
+        const prepared = prepareStaticQrCode(args);
+        if ('error' in prepared) {
+          onOutcome?.('invalid_arguments');
+          return { content: [{ type: 'text', text: `Error: ${prepared.error}` }], isError: true };
+        }
         // `type` is required upstream with no default of its own. Filling it
         // here keeps the common "make a QR code for this URL" call working
         // instead of failing validation before anything is created.
         result = await client.qrcodes.create(
-          asParams<Codeqr.QrcodeCreateParams>({ type: DEFAULT_QRCODE_TYPE, ...args }),
+          asParams<Codeqr.QrcodeCreateParams>({ type: DEFAULT_QRCODE_TYPE, ...prepared.args }),
         );
         break;
+      }
       case 'list_qrcodes':
         result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(args));
         break;

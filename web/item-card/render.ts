@@ -75,21 +75,23 @@ export function renderCard(
   const shown = withoutScheme(view.shortLink);
   const card = el('article', 'card');
 
+  const typeLabel = view.kind === 'qrcode' && view.type && view.type !== 'url' ? typeName(view.type, strings) : undefined;
+  const destination = view.destination ? withoutScheme(view.destination) : undefined;
+  // A static code is printed with its content, not its short link, so the card does not offer the link to share.
+  const heading = view.title ?? destination ?? typeLabel ?? (view.isStatic ? strings.static : shown);
+
   if (view.imageUrl) {
     const image = el('img', 'qr');
     image.setAttribute('src', view.imageUrl);
-    image.setAttribute('alt', fill(strings.qrAlt, shown));
+    image.setAttribute('alt', fill(strings.qrAlt, view.isStatic ? heading : shown));
     image.setAttribute('width', '132');
     image.setAttribute('height', '132');
     card.append(image);
   }
 
-  const typeLabel = view.kind === 'qrcode' && view.type && view.type !== 'url' ? typeName(view.type, strings) : undefined;
-  const destination = view.destination ? withoutScheme(view.destination) : undefined;
-
   // Without a title, what the code leads to names it best; the short link has its own line below.
   const body = el('div', 'body');
-  body.append(el('h2', 'title', view.title ?? destination ?? typeLabel ?? shown));
+  body.append(el('h2', 'title', heading));
 
   const badges = el('div', 'badges');
   badges.append(el('span', view.isStatic ? 'badge' : 'badge dynamic', view.isStatic ? strings.static : strings.dynamic));
@@ -99,19 +101,21 @@ export function renderCard(
 
   if (view.title && destination) body.append(el('p', 'destination', destination));
 
-  const link = el('div', 'link');
-  link.append(el('span', 'short', shown));
-  const copy = el('button', 'copy', strings.copy);
-  copy.setAttribute('type', 'button');
-  copy.addEventListener('click', () => {
-    void actions.copy(view.shortLink).then((copied) => {
-      if (!copied) return;
-      copy.textContent = strings.copied;
-      setTimeout(() => (copy.textContent = strings.copy), 1_500);
+  if (!view.isStatic) {
+    const link = el('div', 'link');
+    link.append(el('span', 'short', shown));
+    const copy = el('button', 'copy', strings.copy);
+    copy.setAttribute('type', 'button');
+    copy.addEventListener('click', () => {
+      void actions.copy(view.shortLink).then((copied) => {
+        if (!copied) return;
+        copy.textContent = strings.copied;
+        setTimeout(() => (copy.textContent = strings.copy), 1_500);
+      });
     });
-  });
-  link.append(copy);
-  body.append(link);
+    link.append(copy);
+    body.append(link);
+  }
 
   if (view.count !== undefined) {
     const stat = el('div', 'stat');

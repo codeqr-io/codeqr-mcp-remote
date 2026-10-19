@@ -141,6 +141,13 @@ describe('tool inventory', () => {
     expect(opening).toMatch(/Never invent an address/);
   });
 
+  it('mentions static codes only because create_qrcode takes static', () => {
+    const qr = TOOLS.find((t) => t.name === 'create_qrcode');
+    expect(SERVER_INSTRUCTIONS).toMatch(/can be made static when the person asks/);
+    expect('static' in ((qr?.inputSchema.properties ?? {}) as object)).toBe(true);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Every short link and dynamic QR code/);
+  });
+
   it('only exempts from a web address the types create_qrcode takes without one', () => {
     const qr = TOOLS.find((t) => t.name === 'create_qrcode')!;
     const types = (qr.inputSchema.properties as { type: { enum: readonly string[] } }).type.enum;

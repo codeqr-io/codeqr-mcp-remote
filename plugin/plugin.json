@@ -1,0 +1,139 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "codeqr",
+  "version": "1.0.0",
+  "description": "Create QR codes and short links whose destination you can change after printing, and see how many times they were scanned.",
+  "author": {
+    "name": "CodeQR",
+    "url": "https://codeqr.io"
+  },
+  "homepage": "https://codeqr.io/en",
+  "keywords": ["qr code", "short link", "analytics", "dynamic qr", "wifi qr code"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "CodeQR",
+        "shortDescription": "Editable, trackable QR codes",
+        "longDescription": "CodeQR creates QR codes and short links that stay editable after they are printed or shared. A dynamic code encodes a short link instead of the destination itself, so you can change where it leads without reprinting anything, and every scan and click is recorded with time, country, city, and device.\n\nIt is made for small businesses and teams that print codes and need them to keep working:\n- Restaurants: menu codes on tables and packaging, with the menu page changeable at any time.\n- Local services: flyers and posters whose code opens a booking page you can swap later.\n- Retail: shop Wi-Fi codes and shelf or product codes.\n- Printed media: codes that outlive the print run, because the page behind them can change.\n\nYour agent can create short links and QR codes on your own domain or a shared one, change where an existing code points, list the codes you made earlier, and pull scan, click, lead, and sale analytics for one code or for the whole workspace.\n\nLimits: CodeQR does not create barcodes such as EAN-13, and it does not read or decode images of codes. Wi-Fi, contact, and text codes can be made static, which encodes the content itself in the pattern; a static code can never be changed afterwards and its scans cannot be counted.",
+        "developerName": "CodeQR",
+        "category": "Productivity",
+        "capabilities": [
+          "Create dynamic QR codes",
+          "Change a QR code destination",
+          "Create static Wi-Fi QR codes",
+          "Create short links",
+          "Report scans and clicks"
+        ],
+        "websiteURL": "https://codeqr.io/en",
+        "supportURL": "https://codeqr.io/en/help",
+        "privacyPolicyURL": "https://codeqr.io/en/privacy",
+        "termsOfServiceURL": "https://codeqr.io/en/terms",
+        "defaultPrompt": [
+          "Make a QR code for my restaurant menu that I can update later without reprinting it.",
+          "Create a Wi-Fi QR code for my shop: network Shop-Guest, password welcome2026, WPA2.",
+          "How many times were my QR codes scanned in the last 30 days, and from which cities?"
+        ],
+        "brandColor": "#1B59F5",
+        "composerIcon": "./assets/logo.png",
+        "logo": "./assets/logo.png"
+      },
+      "onboardingSkill": "./skills/get-started/SKILL.md",
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Create a dynamic QR code for a destination the user names.",
+              "prompt": "Create a QR code that opens https://codeqr.io/en/features/qr-codes",
+              "tools_triggered": "create_qrcode",
+              "expected_behavior": "Returns the new dynamic QR code with its id, the short link it encodes, and the destination it currently leads to."
+            },
+            {
+              "description": "Change where an already printed QR code leads, without reprinting it.",
+              "prompt": "Change the QR code that opens https://codeqr.io/en/features/qr-codes so it opens https://codeqr.io/en/features/link-shortening instead.",
+              "tools_triggered": "list_qrcodes, update_qrcode",
+              "expected_behavior": "Finds the code, confirms the destination changed while the code itself stayed the same, so copies already printed now lead to the new address."
+            },
+            {
+              "description": "Create a static Wi-Fi QR code for a shop.",
+              "prompt": "Create a Wi-Fi QR code for my shop: network Shop-Guest, password welcome2026, WPA2.",
+              "tools_triggered": "create_qrcode",
+              "expected_behavior": "Creates a Wi-Fi code for the network Shop-Guest with WPA2 security. The code is static: it encodes the network itself, so it cannot be changed later and its scans are not counted."
+            },
+            {
+              "description": "Report scans by city over the last 30 days.",
+              "prompt": "How many times were my QR codes scanned in the last 30 days, and from which cities?",
+              "tools_triggered": "get_analytics",
+              "expected_behavior": "Returns the total number of scans for the last 30 days and the cities they came from, ranked by scan count."
+            },
+            {
+              "description": "Review the QR codes that already exist in the workspace.",
+              "prompt": "List the QR codes in my workspace and how many scans each one has.",
+              "tools_triggered": "list_qrcodes",
+              "expected_behavior": "Returns the existing codes with their destinations and scan counts."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Do not trigger for barcode formats the app does not create.",
+              "prompt": "Generate an EAN-13 barcode for this product SKU."
+            },
+            {
+              "description": "Do not trigger for reading or decoding an existing code.",
+              "prompt": "Read this QR code image and tell me what URL it contains."
+            },
+            {
+              "description": "Do not trigger when the user asks for a different provider.",
+              "prompt": "Shorten this URL for me using Bitly."
+            }
+          ]
+        },
+        "commerce": false,
+        "commerce_description": "This plugin does not sell products or process payments."
+      },
+      "publication": {
+        "translations": {
+          "de-DE": {
+            "subtitle": "Änderbare, messbare QR-Codes",
+            "description": "CodeQR erstellt QR-Codes und Kurzlinks, die auch nach dem Druck oder Teilen änderbar bleiben. Ein dynamischer Code enthält einen Kurzlink statt des Ziels selbst. So können Sie ändern, wohin er führt, ohne etwas neu zu drucken, und jeder Scan und Klick wird mit Zeit, Land, Stadt und Gerät erfasst.\n\nGedacht für kleine Unternehmen und Teams, deren gedruckte Codes dauerhaft funktionieren müssen:\n- Restaurants: Speisekarten-Codes auf Tischen und Verpackungen, deren Seite sich jederzeit ändern lässt.\n- Lokale Dienstleister: Flyer und Plakate, deren Code auf eine Buchungsseite führt, die Sie später austauschen können.\n- Einzelhandel: WLAN-Codes für den Laden sowie Regal- und Produktcodes.\n- Printmedien: Codes, die die Auflage überdauern, weil sich die Seite dahinter ändern lässt.\n\nIhr Agent kann Kurzlinks und QR-Codes auf Ihrer eigenen oder einer gemeinsamen Domain erstellen, das Ziel eines bestehenden Codes ändern, früher erstellte Codes auflisten und Scan-, Klick-, Lead- und Verkaufsdaten für einen Code oder den ganzen Arbeitsbereich abrufen.\n\nGrenzen: CodeQR erstellt keine Strichcodes wie EAN-13 und liest oder decodiert keine Bilder. WLAN-, Kontakt- und Textcodes können statisch erstellt werden; dann steckt der Inhalt selbst im Muster. Ein statischer Code lässt sich nie mehr ändern, und seine Scans werden nicht gezählt."
+          },
+          "es-ES": {
+            "subtitle": "QR editables y medibles",
+            "description": "CodeQR crea códigos QR y enlaces cortos que siguen siendo editables después de imprimirlos o compartirlos. Un código dinámico codifica un enlace corto en lugar del destino, así que puede cambiar a dónde lleva sin reimprimir nada, y cada escaneo y clic se registra con la hora, el país, la ciudad y el dispositivo.\n\nPensado para pequeños negocios y equipos que imprimen códigos y necesitan que sigan funcionando:\n- Restaurantes: códigos de la carta en mesas y envases, con la página de la carta modificable en cualquier momento.\n- Servicios locales: folletos y carteles cuyo código abre una página de reservas que puede cambiar más adelante.\n- Comercio: códigos del wifi de la tienda y códigos de estantería o de producto.\n- Medios impresos: códigos que sobreviven a la tirada, porque la página que hay detrás puede cambiar.\n\nSu agente puede crear enlaces cortos y códigos QR en su propio dominio o en uno compartido, cambiar el destino de un código existente, listar los códigos creados antes y obtener estadísticas de escaneos, clics, leads y ventas de un código o de todo el espacio de trabajo.\n\nLímites: CodeQR no crea códigos de barras como EAN-13 y no lee ni decodifica imágenes. Los códigos de wifi, contacto y texto pueden crearse como estáticos, con el contenido codificado en el propio patrón; un código estático nunca se puede cambiar y sus escaneos no se cuentan."
+          },
+          "fr-FR": {
+            "subtitle": "QR codes modifiables et suivis",
+            "description": "CodeQR crée des QR codes et des liens courts qui restent modifiables une fois imprimés ou partagés. Un code dynamique encode un lien court plutôt que la destination elle-même : vous pouvez changer l'endroit où il mène sans rien réimprimer, et chaque scan et chaque clic est enregistré avec l'heure, le pays, la ville et l'appareil.\n\nConçu pour les petites entreprises et les équipes qui impriment des codes et ont besoin qu'ils continuent de fonctionner :\n- Restaurants : codes de menu sur les tables et les emballages, avec une page de menu modifiable à tout moment.\n- Services locaux : flyers et affiches dont le code ouvre une page de réservation que vous pourrez remplacer plus tard.\n- Commerce : codes du Wi-Fi de la boutique et codes de rayon ou de produit.\n- Supports imprimés : des codes qui survivent au tirage, car la page derrière peut changer.\n\nVotre agent peut créer des liens courts et des QR codes sur votre propre domaine ou un domaine partagé, changer la destination d'un code existant, lister les codes créés précédemment et récupérer les statistiques de scans, de clics, de leads et de ventes pour un code ou pour tout l'espace de travail.\n\nLimites : CodeQR ne crée pas de codes-barres comme l'EAN-13 et ne lit ni ne décode les images. Les codes Wi-Fi, de contact et de texte peuvent être créés en mode statique, avec le contenu encodé dans le motif lui-même ; un code statique ne peut jamais être modifié et ses scans ne sont pas comptés."
+          },
+          "it-IT": {
+            "subtitle": "QR modificabili e misurabili",
+            "description": "CodeQR crea QR code e link brevi che restano modificabili anche dopo la stampa o la condivisione. Un codice dinamico contiene un link breve invece della destinazione vera e propria: puoi cambiare dove porta senza ristampare nulla, e ogni scansione e ogni clic viene registrato con orario, paese, città e dispositivo.\n\nPensato per piccole attività e team che stampano codici e hanno bisogno che continuino a funzionare:\n- Ristoranti: codici del menu su tavoli e confezioni, con la pagina del menu modificabile in qualsiasi momento.\n- Servizi locali: volantini e manifesti il cui codice apre una pagina di prenotazione che potrai cambiare in seguito.\n- Negozi: codici del Wi-Fi del negozio e codici per scaffali o prodotti.\n- Stampati: codici che durano più della tiratura, perché la pagina dietro può cambiare.\n\nIl tuo agente può creare link brevi e QR code sul tuo dominio o su uno condiviso, cambiare la destinazione di un codice esistente, elencare i codici creati in precedenza e ottenere le statistiche di scansioni, clic, lead e vendite per un singolo codice o per l'intero spazio di lavoro.\n\nLimiti: CodeQR non crea codici a barre come l'EAN-13 e non legge né decodifica le immagini. I codici Wi-Fi, contatto e testo possono essere creati come statici, con il contenuto codificato nel disegno stesso; un codice statico non può mai essere modificato e le sue scansioni non vengono conteggiate."
+          },
+          "ja-JP": {
+            "subtitle": "編集できて計測できるQRコード",
+            "description": "CodeQRは、印刷や共有のあとでも編集できるQRコードと短縮リンクを作成します。動的コードは遷移先そのものではなく短縮リンクを埋め込むため、再印刷することなく遷移先を変更でき、すべてのスキャンとクリックが日時、国、都市、デバイスとともに記録されます。\n\nコードを印刷しても使い続けたい小規模な事業者やチーム向けです。\n- 飲食店：テーブルや包装に付けるメニューのコード。メニューのページはいつでも変更できます。\n- 地域のサービス：チラシやポスターのコードから予約ページを開き、そのページはあとから差し替えられます。\n- 小売店：店舗のWi-Fi用コードや、棚・商品用のコード。\n- 印刷物：コードの先のページを変えられるので、刷った部数より長く使えます。\n\nエージェントは、ご自身のドメインまたは共有ドメインで短縮リンクとQRコードを作成し、既存のコードの遷移先を変更し、過去に作ったコードを一覧にし、1つのコードまたはワークスペース全体のスキャン、クリック、リード、売上の分析を取得できます。\n\n制限：CodeQRはEAN-13などのバーコードは作成せず、画像の読み取りやデコードも行いません。Wi-Fi、連絡先、テキストのコードは静的コードとして作成でき、その場合は内容そのものがパターンに埋め込まれます。静的コードはあとから変更できず、スキャン数も数えられません。"
+          },
+          "ko-KR": {
+            "subtitle": "수정·측정 가능한 QR 코드",
+            "description": "CodeQR은 인쇄하거나 공유한 뒤에도 수정할 수 있는 QR 코드와 짧은 링크를 만듭니다. 동적 코드는 목적지 자체가 아니라 짧은 링크를 담고 있어서, 다시 인쇄하지 않고도 연결되는 곳을 바꿀 수 있으며 모든 스캔과 클릭이 시간, 국가, 도시, 기기와 함께 기록됩니다.\n\n코드를 인쇄해 두고 계속 쓰려는 소규모 사업자와 팀을 위한 서비스입니다.\n- 음식점: 테이블과 포장에 붙이는 메뉴 코드. 메뉴 페이지는 언제든 바꿀 수 있습니다.\n- 지역 서비스: 전단지와 포스터의 코드로 예약 페이지를 열고, 그 페이지는 나중에 교체할 수 있습니다.\n- 소매점: 매장 와이파이 코드와 진열대·상품 코드.\n- 인쇄물: 코드 뒤의 페이지를 바꿀 수 있어 인쇄 부수보다 오래 쓸 수 있습니다.\n\n에이전트는 내 도메인이나 공용 도메인에서 짧은 링크와 QR 코드를 만들고, 기존 코드의 연결 대상을 바꾸고, 이전에 만든 코드를 목록으로 보여 주며, 코드 하나 또는 워크스페이스 전체의 스캔, 클릭, 리드, 판매 분석을 가져올 수 있습니다.\n\n제한 사항: CodeQR은 EAN-13 같은 바코드를 만들지 않으며 이미지를 읽거나 해독하지 않습니다. 와이파이, 연락처, 텍스트 코드는 정적 코드로 만들 수 있고, 이 경우 내용 자체가 패턴에 담깁니다. 정적 코드는 나중에 바꿀 수 없고 스캔 수도 집계되지 않습니다."
+          },
+          "pt-BR": {
+            "subtitle": "QR codes editáveis e medidos",
+            "description": "O CodeQR cria QR codes e links curtos que continuam editáveis depois de impressos ou compartilhados. Um código dinâmico guarda um link curto em vez do destino em si, então você muda para onde ele leva sem reimprimir nada, e cada escaneamento e clique é registrado com horário, país, cidade e dispositivo.\n\nFeito para pequenos negócios e equipes que imprimem códigos e precisam que eles continuem funcionando:\n- Restaurantes: códigos do cardápio em mesas e embalagens, com a página do cardápio alterável a qualquer momento.\n- Serviços locais: panfletos e cartazes cujo código abre uma página de agendamento que você pode trocar depois.\n- Varejo: códigos do Wi-Fi da loja e códigos de prateleira ou de produto.\n- Material impresso: códigos que duram mais que a tiragem, porque a página por trás pode mudar.\n\nSeu agente pode criar links curtos e QR codes no seu domínio ou em um compartilhado, mudar o destino de um código existente, listar os códigos criados antes e puxar as estatísticas de escaneamentos, cliques, leads e vendas de um código ou de todo o workspace.\n\nLimites: o CodeQR não cria códigos de barras como EAN-13 e não lê nem decodifica imagens. Códigos de Wi-Fi, contato e texto podem ser criados como estáticos, com o conteúdo gravado no próprio desenho; um código estático nunca pode ser alterado e seus escaneamentos não são contados."
+          },
+          "pt-PT": {
+            "subtitle": "Códigos QR editáveis e medidos",
+            "description": "O CodeQR cria códigos QR e ligações curtas que continuam editáveis depois de impressos ou partilhados. Um código dinâmico guarda uma ligação curta em vez do destino em si, pelo que pode alterar para onde ele leva sem reimprimir nada, e cada leitura e clique é registado com a hora, o país, a cidade e o dispositivo.\n\nFeito para pequenos negócios e equipas que imprimem códigos e precisam que continuem a funcionar:\n- Restaurantes: códigos da ementa em mesas e embalagens, com a página da ementa alterável a qualquer momento.\n- Serviços locais: folhetos e cartazes cujo código abre uma página de marcações que pode trocar mais tarde.\n- Comércio: códigos do Wi-Fi da loja e códigos de prateleira ou de produto.\n- Material impresso: códigos que duram mais do que a tiragem, porque a página por trás pode mudar.\n\nO seu agente pode criar ligações curtas e códigos QR no seu domínio ou num partilhado, alterar o destino de um código existente, listar os códigos criados anteriormente e obter as estatísticas de leituras, cliques, leads e vendas de um código ou de todo o espaço de trabalho.\n\nLimites: o CodeQR não cria códigos de barras como o EAN-13 e não lê nem descodifica imagens. Os códigos de Wi-Fi, contacto e texto podem ser criados como estáticos, com o conteúdo gravado no próprio desenho; um código estático nunca pode ser alterado e as suas leituras não são contadas."
+          },
+          "ru-RU": {
+            "subtitle": "Редактируемые QR-коды",
+            "description": "CodeQR создаёт QR-коды и короткие ссылки, которые можно менять даже после печати или отправки. Динамический код содержит короткую ссылку, а не сам адрес назначения, поэтому вы можете изменить, куда он ведёт, ничего не перепечатывая, а каждое сканирование и каждый клик записываются со временем, страной, городом и устройством.\n\nСервис создан для малого бизнеса и команд, которые печатают коды и хотят, чтобы они продолжали работать:\n- Рестораны: коды меню на столах и упаковке; страницу меню можно изменить в любой момент.\n- Местные услуги: листовки и плакаты, код на которых открывает страницу записи, а саму страницу позже можно заменить.\n- Розница: коды Wi-Fi для магазина и коды для полок и товаров.\n- Печатная продукция: коды, которые переживают тираж, потому что страницу за ними можно менять.\n\nВаш агент может создавать короткие ссылки и QR-коды на вашем домене или на общем, менять адрес назначения существующего кода, показывать список созданных ранее кодов и получать статистику сканирований, кликов, лидов и продаж по одному коду или по всему рабочему пространству.\n\nОграничения: CodeQR не создаёт штрихкоды вроде EAN-13 и не считывает и не расшифровывает изображения. Коды Wi-Fi, контактов и текста можно создавать статическими, тогда содержимое записано прямо в рисунке кода. Статический код нельзя изменить, а его сканирования не подсчитываются."
+          },
+          "zh-CN": {
+            "subtitle": "可修改、可统计的二维码",
+            "description": "CodeQR 可创建二维码和短链接，印刷或分享之后仍然可以修改。动态码编码的是一个短链接，而不是目标地址本身，因此无需重新印刷就能更改它指向的页面，每一次扫描和点击都会记录时间、国家、城市和设备。\n\n适合需要印刷二维码并希望它们长期有效的小型商家和团队：\n- 餐厅：桌面和包装上的菜单码，菜单页面可随时更换。\n- 本地服务：传单和海报上的二维码打开预约页面，页面之后可以替换。\n- 零售：店铺 Wi-Fi 码，以及货架或商品码。\n- 印刷品：二维码背后的页面可以更换，所以能比印刷批次用得更久。\n\n您的助手可以在您自己的域名或共享域名上创建短链接和二维码，更改已有二维码的指向，列出之前创建的二维码，并获取单个二维码或整个工作区的扫描、点击、线索和销售数据。\n\n限制：CodeQR 不创建 EAN-13 等条形码，也不读取或解码图片。Wi-Fi、联系人和文本码可以创建为静态码，内容直接编码在图案中；静态码以后无法修改，其扫描也不会被统计。"
+          }
+        }
+      }
+    }
+  }
+}

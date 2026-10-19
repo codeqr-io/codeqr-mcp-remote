@@ -1,11 +1,19 @@
 export const PLACEHOLDER_HOSTS = ['example.com', 'example.org', 'example.net', 'demo.com', 'localhost'];
 
-function hostOf(url: string): string | undefined {
+function parse(url: string): URL | undefined {
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url);
   } catch {
     return undefined;
   }
+}
+
+function hostOf(url: string): string | undefined {
+  const parsed = parse(url);
+  if (parsed?.protocol === 'http:' || parsed?.protocol === 'https:') return parsed.hostname.toLowerCase();
+  // The API stores "example.com/menu" as https://example.com/menu
+  // (getUrlFromString), so a destination without a scheme is read the same way.
+  return parse(`https://${url}`)?.hostname.toLowerCase() || undefined;
 }
 
 export function isPlaceholderDestination(url: string): boolean {

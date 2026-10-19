@@ -54,6 +54,12 @@ describe('a placeholder destination', () => {
     expect(outcome).toBe('placeholder_destination');
   });
 
+  it.each(TOOL_ARGS)('is refused by %s when sent without a scheme', async (tool, base) => {
+    const { calls, outcome } = await call(tool, { ...base, url: 'example.com/menu' });
+    expect(calls).toEqual([]);
+    expect(outcome).toBe('placeholder_destination');
+  });
+
   it('is refused for every listed host, subdomains included', async () => {
     for (const host of PLACEHOLDER_HOSTS) {
       const { calls, outcome } = await call('create_qrcode', { url: `https://menu.${host}/` });

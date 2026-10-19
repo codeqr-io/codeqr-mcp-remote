@@ -35,6 +35,7 @@ describe('toolIntentFields', () => {
 
   it('flags a placeholder destination and tolerates an invalid url', () => {
     expect(toolIntentFields('create_link', { url: 'https://example.com' }).placeholderDestination).toBe(true);
+    expect(toolIntentFields('create_qrcode', { url: 'example.com/menu' }).placeholderDestination).toBe(true);
     expect(toolIntentFields('create_link', { url: '::bad' })).toMatchObject({
       placeholderDestination: false,
       hasUtm: false,

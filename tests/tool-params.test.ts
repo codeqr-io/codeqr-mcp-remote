@@ -82,7 +82,7 @@ const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
 const UPDATE_LINK = ['url', 'key', 'archived', 'expiresAt', 'comments', 'trackConversion', 'proxy', 'title', 'description', 'image', 'rules'] as const;
 const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard', 'crypto', 'whatsapp'] as const;
 const CREATE_QRCODE = [
-  ...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor', 'title', 'walletPass',
+  ...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor', 'title', 'static', 'walletPass',
 ] as const;
 const LIST_QRCODES = ['page'] as const;
 const UPDATE_QRCODE = [

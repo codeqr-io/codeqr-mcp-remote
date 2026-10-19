@@ -1,5 +1,6 @@
 import { DEFAULT_QRCODE_TYPE, QRCODE_CONTENT_TYPES } from './qrcode-content-types.js';
 import { isPlaceholderDestination } from './placeholder-destination.js';
+import { asksForStatic } from './static-qrcode.js';
 import type { EventFields } from './telemetry.js';
 
 const INTENT_TOOLS = new Set(['create_qrcode', 'create_link']);
@@ -27,12 +28,13 @@ const isNonEmptyArray = (value: unknown): boolean => Array.isArray(value) && val
 export function toolIntentFields(
   name: string,
   args: Record<string, unknown> | undefined,
-): Pick<EventFields, 'qrType' | 'placeholderDestination' | 'hasUtm' | 'hasTag' | 'hasRules'> {
+): Pick<EventFields, 'qrType' | 'qrStatic' | 'placeholderDestination' | 'hasUtm' | 'hasTag' | 'hasRules'> {
   if (!INTENT_TOOLS.has(name) || !args) return {};
 
   const url = typeof args.url === 'string' ? args.url : undefined;
   return {
     qrType: name === 'create_qrcode' ? qrTypeOf(args.type) : undefined,
+    qrStatic: name === 'create_qrcode' ? asksForStatic(args) : undefined,
     placeholderDestination: url === undefined ? undefined : isPlaceholderDestination(url),
     hasUtm: url === undefined ? undefined : hasUtmParam(url),
     hasTag: isNonEmptyArray(args.tagIds) || isNonEmptyArray(args.tagNames),

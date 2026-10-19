@@ -57,6 +57,15 @@ describe('nextStepsText', () => {
     expect(fixed).toMatch(/static/);
   });
 
+  // The short link of a static code is never set up to redirect.
+  it('does not offer a static code\'s short link as live, but still gives its image', () => {
+    const fixed = nextStepsText({ kind: 'qrcode', created: { ...created, isStatic: true }, appUrl: APP, apiUrl: API });
+
+    expect(fixed).not.toMatch(/is live/);
+    expect(fixed).toMatch(/^Your static QR code is ready\./);
+    expect(fixed).toContain(`QR image: ${qrImageUrl(API, shortLinkOf(created))}`);
+  });
+
   it.each(['qrcode', 'link'] as const)('never talks about plans or prices (%s)', (kind) => {
     for (const workspaceSlug of ['acme', undefined]) {
       for (const isStatic of [false, true]) {

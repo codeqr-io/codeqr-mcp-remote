@@ -33,6 +33,13 @@ describe('toolIntentFields', () => {
     });
   });
 
+  it('records whether create_qrcode asked for a static code', () => {
+    expect(toolIntentFields('create_qrcode', { type: 'wifi', static: true }).qrStatic).toBe(true);
+    expect(toolIntentFields('create_qrcode', { type: 'wifi', static: 'true' }).qrStatic).toBe(true);
+    expect(toolIntentFields('create_qrcode', { type: 'wifi' }).qrStatic).toBe(false);
+    expect(toolIntentFields('create_link', { url: 'https://a.test' }).qrStatic).toBeUndefined();
+  });
+
   it('flags a placeholder destination and tolerates an invalid url', () => {
     expect(toolIntentFields('create_link', { url: 'https://example.com' }).placeholderDestination).toBe(true);
     expect(toolIntentFields('create_qrcode', { url: 'example.com/menu' }).placeholderDestination).toBe(true);

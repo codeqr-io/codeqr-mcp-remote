@@ -86,6 +86,21 @@ describe('renderCard', () => {
     expect(buttons(root).map((button) => button.textContent)).toEqual(['Open in CodeQR']);
   });
 
+  it('does not offer the short link of a static code, which does not redirect', () => {
+    const { root } = render(qrResult({ isStatic: true, type: 'wifi', title: null, destination: undefined }));
+
+    expect(root.querySelector('.link')).toBeNull();
+    expect(root.querySelector('.copy')).toBeNull();
+    expect(root.textContent).not.toContain('freeqr.ink/abc-qr');
+    expect(root.querySelector('img')?.getAttribute('alt')).not.toContain('freeqr.ink');
+  });
+
+  it('names an untitled static code without a type by its kind, not its short link', () => {
+    const { root } = render(qrResult({ isStatic: true, type: undefined, title: null, destination: undefined }));
+
+    expect(root.querySelector('.title')?.textContent).toBe('Static');
+  });
+
   it('keeps any text from the result as text', () => {
     const { root } = render(qrResult({ title: '<img src=x onerror="alert(1)">' }));
 

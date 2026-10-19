@@ -42,7 +42,10 @@ export function nextStepsText({ kind, created, workspaceSlug, appUrl, apiUrl }: 
   const noun = kind === 'qrcode' ? 'QR code' : 'short link';
   const section = kind === 'qrcode' ? 'qrcodes' : 'links';
 
-  const lines = [`Your ${noun} is live: ${shortLink}`];
+  // A static code's short link is never set up to redirect, so it is not
+  // offered as something to share; /qr still finds the code by it and draws
+  // the content the code holds.
+  const lines = [created.isStatic ? `Your static ${noun} is ready.` : `Your ${noun} is live: ${shortLink}`];
   if (kind === 'qrcode') lines.push(`QR image: ${qrImageUrl(apiUrl, shortLink)}`);
   if (workspaceSlug) {
     // The dashboard's own edit page; `/{section}/[key]` is the stats view and
@@ -50,7 +53,7 @@ export function nextStepsText({ kind, created, workspaceSlug, appUrl, apiUrl }: 
     lines.push(`Manage it in CodeQR: ${appUrl}/${workspaceSlug}/${section}/edit?id=${encodeURIComponent(created.id)}`);
   }
   if (created.isStatic) {
-    lines.push('This is a static code: it holds the destination itself, so it cannot be changed or counted later.');
+    lines.push('This is a static code: it holds its content itself, so it cannot be changed or counted later.');
   } else {
     lines.push(
       kind === 'qrcode'

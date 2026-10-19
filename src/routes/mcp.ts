@@ -24,6 +24,7 @@ import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
+import { placeholderDestinationIn, placeholderRefusal } from '../placeholder-destination.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { hashPrefix, logEvent } from '../telemetry.js';
@@ -104,7 +105,11 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * with silence.
  */
 const QRCODE_PAYLOAD_PROPERTIES = {
-  url: { type: 'string', description: 'For type "url": the destination the code should lead to' },
+  url: {
+    type: 'string',
+    description:
+      'For type "url": the real destination the person gave. Ask for it if they have not; a placeholder address such as example.com is refused',
+  },
   text: { type: 'string', description: 'For type "text": the plain text to encode' },
   phone: { type: 'string', description: 'For type "phone": the number to call, e.g. "+5511999999999"' },
   email: {
@@ -206,10 +211,16 @@ const QRCODE_PAYLOAD_PROPERTIES = {
 // Exported so tests can hold this capability claim against what the tool
 // schemas actually declare — this string has shipped an overclaim in both
 // directions before.
+//
+// The directory forbids wording that steers which tool or app the model
+// picks, so this only says what the tools do and what they need. Asking for
+// the destination comes first because clients may read little past the
+// opening of this string.
 export const SERVER_INSTRUCTIONS = [
   'You are connected to CodeQR via MCP.',
-  'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
-  'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
+  'Every short link and QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
+  'A link, or a QR code that opens a web page, needs the real destination from the person: if they have not given one, ask for it before creating anything. Never invent an address or use a placeholder such as example.com; CodeQR refuses those.',
+  'Codes for Wi-Fi, a contact card or plain text need no web address.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
@@ -359,7 +370,11 @@ export const TOOLS = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        url: { type: 'string', description: 'The destination URL to shorten' },
+        url: {
+          type: 'string',
+          description:
+            'The destination URL to shorten: the real address the person gave. Ask for it if they have not; a placeholder address such as example.com is refused',
+        },
         domain: { type: 'string', description: 'Custom domain (optional)' },
         key: { type: 'string', description: 'Custom slug/key (optional, auto-generated if omitted)' },
         externalId: { type: 'string', description: 'External reference ID (optional)' },
@@ -429,7 +444,10 @@ export const TOOLS = [
       type: 'object' as const,
       properties: {
         linkId: { type: 'string', description: 'The link ID to update' },
-        url: { type: 'string', description: 'New destination URL (optional)' },
+        url: {
+          type: 'string',
+          description: 'New destination URL (optional; a placeholder address such as example.com is refused)',
+        },
         key: { type: 'string', description: 'New slug (optional)' },
         archived: { type: 'boolean', description: 'Archive status (optional)' },
         expiresAt: { type: 'string', description: 'New expiration date (optional)' },
@@ -714,7 +732,13 @@ export interface ToolResult {
 }
 
 /** How a tool call ended, for telemetry; never sent to the client. */
-export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
+export type ToolOutcome =
+  | 'ok'
+  | 'invalid_arguments'
+  | 'placeholder_destination'
+  | 'unknown_tool'
+  | 'plan_limit'
+  | 'api_error';
 
 /**
  * Exported for the tests. The argument-validation branch is only meaningful at
@@ -729,6 +753,12 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   onOutcome?: (outcome: ToolOutcome) => void,
 ): Promise<ToolResult> {
+  const placeholder = placeholderDestinationIn(name, args);
+  if (placeholder) {
+    onOutcome?.('placeholder_destination');
+    return { content: [{ type: 'text', text: `Error: ${placeholderRefusal(placeholder)}` }], isError: true };
+  }
+
   try {
     let result: unknown;
     // The arguments the card describes; get_analytics resolves a code named by domain and key.

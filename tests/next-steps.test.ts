@@ -71,7 +71,7 @@ describe('nextStepsText', () => {
 describe('asCreatedResource', () => {
   it('reads id, domain, key and the static flag from a create response', () => {
     const { id, domain, key } = created;
-    expect(asCreatedResource({ id, domain, key, url: 'https://example.com', static: false })).toEqual(created);
+    expect(asCreatedResource({ id, domain, key, url: 'https://acme.test', static: false })).toEqual(created);
     expect(asCreatedResource({ id, domain, key, static: true })).toEqual({ ...created, isStatic: true });
   });
 
@@ -104,7 +104,7 @@ describe('handleToolCall create note', () => {
   it('appends the note after the unchanged JSON for create_qrcode', async () => {
     mockGetWorkspace.mockResolvedValue({ id: 'p', slug: 'acme', name: 'Acme', plan: 'free' } as never);
 
-    const result = await handleToolCall(stub(response) as never, 'key', 'create_qrcode', { url: 'https://example.com' });
+    const result = await handleToolCall(stub(response) as never, 'key', 'create_qrcode', { url: 'https://acme.test' });
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(2);
@@ -123,7 +123,7 @@ describe('handleToolCall create note', () => {
   it('still succeeds, without the dashboard line, when the workspace cannot be read', async () => {
     mockGetWorkspace.mockRejectedValue(new Error('CodeQR unreachable'));
 
-    const result = await handleToolCall(stub(response) as never, 'key', 'create_link', { url: 'https://example.com' });
+    const result = await handleToolCall(stub(response) as never, 'key', 'create_link', { url: 'https://acme.test' });
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(2);
@@ -156,8 +156,8 @@ describe('handleToolCall create note', () => {
 
 describe('handleToolCall item card', () => {
   const ITEM_CARD_META_KEY = 'io.codeqr/card';
-  const qr = { id: created.id, domain: created.domain, key: created.key, type: 'url', url: 'https://example.com', static: false, scans: 3 };
-  const link = { id: 'link_1', domain: 'cqr.ink', key: 'launch', url: 'https://example.com', clicks: 5 };
+  const qr = { id: created.id, domain: created.domain, key: created.key, type: 'url', url: 'https://acme.test', static: false, scans: 3 };
+  const link = { id: 'link_1', domain: 'cqr.ink', key: 'launch', url: 'https://acme.test', clicks: 5 };
   const stub = () => ({
     qrcodes: {
       create: vi.fn().mockResolvedValue(qr),

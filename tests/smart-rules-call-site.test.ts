@@ -35,8 +35,8 @@ const call = (client: unknown, name: string, args: Record<string, unknown>) =>
   handleToolCall(client as any, 'key', name, args);
 
 const goodSplit = [
-  { url: 'https://example.com/a', weight: 50 },
-  { url: 'https://example.com/b', weight: 50 },
+  { url: 'https://acme.test/a', weight: 50 },
+  { url: 'https://acme.test/b', weight: 50 },
 ];
 
 describe('create_link', () => {
@@ -44,8 +44,8 @@ describe('create_link', () => {
     const { client, calls } = spyClient();
 
     const res = await call(client, 'create_link', {
-      url: 'https://example.com',
-      rules: [{ split: [{ url: 'https://example.com/a', weight: 60 }, { url: 'https://example.com/b', weight: 60 }] }],
+      url: 'https://acme.test',
+      rules: [{ split: [{ url: 'https://acme.test/a', weight: 60 }, { url: 'https://acme.test/b', weight: 60 }] }],
     });
 
     expect(res.isError).toBe(true);
@@ -57,7 +57,7 @@ describe('create_link', () => {
     const { client, calls } = spyClient();
 
     const res = await call(client, 'create_link', {
-      url: 'https://example.com',
+      url: 'https://acme.test',
       rules: [{ split: goodSplit }],
     });
 
@@ -72,7 +72,7 @@ describe('create_link', () => {
   it('leaves a call without rules alone', async () => {
     const { client, calls } = spyClient();
 
-    const res = await call(client, 'create_link', { url: 'https://example.com' });
+    const res = await call(client, 'create_link', { url: 'https://acme.test' });
 
     expect(res.isError).toBeUndefined();
     expect(calls).toHaveLength(1);
@@ -85,7 +85,7 @@ describe('update_link', () => {
 
     const res = await call(client, 'update_link', {
       linkId: 'link_1',
-      rules: [{ url: 'https://example.com/x', split: goodSplit }],
+      rules: [{ url: 'https://acme.test/x', split: goodSplit }],
     });
 
     expect(res.isError).toBe(true);

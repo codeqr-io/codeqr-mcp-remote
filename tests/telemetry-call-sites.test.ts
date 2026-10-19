@@ -387,10 +387,10 @@ describe('handleToolCall onOutcome', () => {
   const run = (client: unknown, name: string, args: Record<string, unknown>, onOutcome?: (o: any) => void) =>
     handleToolCall(client as never, 'key', name, args, onOutcome);
 
-  const validArgs = { url: 'https://example.com' };
+  const validArgs = { url: 'https://acme.test' };
   const invalidRules = {
-    url: 'https://example.com',
-    rules: [{ split: [{ url: 'https://example.com/a', weight: 60 }, { url: 'https://example.com/b', weight: 60 }] }],
+    url: 'https://acme.test',
+    rules: [{ split: [{ url: 'https://acme.test/a', weight: 60 }, { url: 'https://acme.test/b', weight: 60 }] }],
   };
 
   const cases: Array<{

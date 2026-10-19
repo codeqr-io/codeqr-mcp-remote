@@ -11,9 +11,20 @@ export const STATIC_TYPES_IN_WORDS = `${STATIC_QRCODE_TYPES.slice(0, -1).join(',
 // on their own they would print an empty card.
 const VCARD_ENCODED_ALONE = ['name', 'surname', 'phone', 'email', 'website', 'address'];
 
-/** The API also takes the strings, so a model sending "true" still makes a static code. */
+// A client whose copy of this tool predates `static` sends it as the string it
+// was given, and the API's schema takes only a boolean, so "true" and "false"
+// are read here and forwarded as booleans. Anything else is not a yes or a no.
+function staticFlag(value: unknown): boolean | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean') return value;
+  const word = typeof value === 'string' ? value.trim().toLowerCase() : undefined;
+  if (word === 'true') return true;
+  if (word === 'false') return false;
+  return null;
+}
+
 export function asksForStatic(args: Record<string, unknown>): boolean {
-  return args.static === true || args.static === 'true';
+  return staticFlag(args.static) === true;
 }
 
 /**
@@ -25,8 +36,14 @@ export function asksForStatic(args: Record<string, unknown>): boolean {
 export function prepareStaticQrCode(
   args: Record<string, unknown>,
 ): { args: Record<string, unknown> } | { error: string } {
-  if (!asksForStatic(args)) return { args };
+  const flag = staticFlag(args.static);
+  if (flag === null) return { error: 'static must be true or false.' };
+  if (flag !== true) {
+    const { static: _sent, ...rest } = args;
+    return { args: flag === false ? { ...rest, static: false } : rest };
+  }
 
+  const staticArgs = { ...args, static: true };
   const type = args.type ?? DEFAULT_QRCODE_TYPE;
   if (!(STATIC_QRCODE_TYPES as readonly unknown[]).includes(type)) {
     return {
@@ -42,12 +59,12 @@ export function prepareStaticQrCode(
       };
     }
   }
-  if (type !== 'wifi') return { args };
+  if (type !== 'wifi') return { args: staticArgs };
 
   const wifi = (typeof args.wifi === 'object' && args.wifi !== null ? args.wifi : {}) as Record<string, unknown>;
   const { encryption, password } = wifi;
   if (encryption === WIFI_OPEN_NETWORK) {
-    return { args: { ...args, wifi: { ...wifi, password: typeof password === 'string' ? password : '' } } };
+    return { args: { ...staticArgs, wifi: { ...wifi, password: typeof password === 'string' ? password : '' } } };
   }
   if (typeof encryption !== 'string' || !(WIFI_SECURED_ENCRYPTIONS as readonly string[]).includes(encryption)) {
     return {
@@ -57,5 +74,5 @@ export function prepareStaticQrCode(
   if (typeof password !== 'string' || !password) {
     return { error: `A static Wi-Fi code on a ${encryption} network needs wifi.password. Ask the person for it.` };
   }
-  return { args };
+  return { args: staticArgs };
 }

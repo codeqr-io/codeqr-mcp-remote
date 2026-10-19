@@ -49,10 +49,36 @@ describe('prepareStaticQrCode', () => {
     expect(prepareStaticQrCode({ url: 'https://codeqr.io', static: true })).toHaveProperty('error');
   });
 
-  it('reads the string the API also accepts as a request for static', () => {
+  // A client with an older copy of the schema sends the string; the API takes only a boolean.
+  it('reads "true" and "false" as strings and forwards them as booleans', () => {
     expect(asksForStatic({ static: 'true' })).toBe(true);
     expect(asksForStatic({ static: 'false' })).toBe(false);
     expect(prepareStaticQrCode({ type: 'url', static: 'true' })).toHaveProperty('error');
+    expect(prepareStaticQrCode({ type: 'text', static: 'true', text: 'Table 4' })).toEqual({
+      args: { type: 'text', static: true, text: 'Table 4' },
+    });
+    expect(prepareStaticQrCode({ type: 'url', static: 'false', url: 'https://codeqr.io' })).toEqual({
+      args: { type: 'url', static: false, url: 'https://codeqr.io' },
+    });
+    const prepared = prepareStaticQrCode({ ...wifi({ encryption: 'WPA2', password: 'welcome2026' }), static: 'true' });
+    expect('args' in prepared && prepared.args.static).toBe(true);
+  });
+
+  it('reads the words in any case, treats null as not sent, and refuses anything else', () => {
+    expect(prepareStaticQrCode({ type: 'text', static: ' True ', text: 'x' })).toEqual({
+      args: { type: 'text', static: true, text: 'x' },
+    });
+    expect(prepareStaticQrCode({ type: 'url', static: 'FALSE', url: 'https://codeqr.io' })).toEqual({
+      args: { type: 'url', static: false, url: 'https://codeqr.io' },
+    });
+    expect(prepareStaticQrCode({ type: 'url', static: null, url: 'https://codeqr.io' })).toEqual({
+      args: { type: 'url', url: 'https://codeqr.io' },
+    });
+    for (const value of ['yes', 1, 0, {}, '']) {
+      expect(prepareStaticQrCode({ type: 'text', static: value, text: 'x' })).toEqual({
+        error: 'static must be true or false.',
+      });
+    }
   });
 
   it.each(WIFI_SECURED_ENCRYPTIONS)('accepts a static Wi-Fi code on %s with a password', (encryption) => {
@@ -114,6 +140,12 @@ describe('create_qrcode static call site', () => {
     expect(sent).toEqual([]);
     expect(result.isError).toBe(true);
     expect(outcome).toBe('invalid_arguments');
+  });
+
+  it('forwards static as a boolean when the client sent the string', async () => {
+    const { sent, outcome } = await call({ ...wifi({ encryption: 'WPA2', password: 'welcome2026' }), static: 'true' });
+    expect(outcome).toBe('ok');
+    expect(sent).toEqual([wifi({ encryption: 'WPA2', password: 'welcome2026' })]);
   });
 
   it('forwards a static Wi-Fi code with static set and the open-network password filled', async () => {

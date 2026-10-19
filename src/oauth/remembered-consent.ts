@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { nanoid } from 'nanoid';
 import { CODEQR_OAUTH_SCOPES } from '../config.js';
+import { logEvent } from '../telemetry.js';
 import { COOKIE_TOKEN_LENGTH, readCookieToken } from './browser-binding.js';
 import {
   forgetRememberedConsent,
@@ -45,6 +46,12 @@ export interface ConsentRequest {
 }
 
 const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } as const;
+
+// Remembering is a convenience on top of a connection that already worked: a
+// store outage costs the user the screen once more, never the redirect.
+function reportStoreFailure(operation: 'save' | 'forget' | 'read'): void {
+  logEvent('oauth.consent', { outcome: 'error', reason: `remember_${operation}_failed` });
+}
 
 export function canRemember(redirectUri: string): boolean {
   return findVerifiedClient(redirectUri) !== undefined;
@@ -65,22 +72,40 @@ export async function rememberApproval(req: Request, res: Response, request: Con
   const previous = readCookieToken(req, REMEMBER_COOKIE);
   const id = nanoid(COOKIE_TOKEN_LENGTH);
 
-  await saveRememberedConsent(id, {
-    clientId: request.clientId,
-    redirectUri: request.redirectUri,
-    scopeVersion: scopeVersion(request.scope),
-  });
-  if (previous) await forgetRememberedConsent(previous);
+  try {
+    await saveRememberedConsent(id, {
+      clientId: request.clientId,
+      redirectUri: request.redirectUri,
+      scopeVersion: scopeVersion(request.scope),
+    });
+  } catch {
+    reportStoreFailure('save');
+    return;
+  }
 
   res.cookie(REMEMBER_COOKIE, id, { ...COOKIE_OPTIONS, maxAge: REMEMBERED_CONSENT_TTL_SEC * 1000 });
+
+  if (previous) {
+    try {
+      await forgetRememberedConsent(previous);
+    } catch {
+      // The old record is unreachable once its cookie is replaced; it expires on its own.
+      reportStoreFailure('forget');
+    }
+  }
 }
 
 export async function forgetApproval(req: Request, res: Response): Promise<void> {
   const id = readCookieToken(req, REMEMBER_COOKIE);
   if (!id) return;
 
-  await forgetRememberedConsent(id);
+  // Without the cookie the record is unreachable, so clearing it is enough to forget.
   res.clearCookie(REMEMBER_COOKIE, COOKIE_OPTIONS);
+  try {
+    await forgetRememberedConsent(id);
+  } catch {
+    reportStoreFailure('forget');
+  }
 }
 
 export async function isRemembered(req: Request, request: ConsentRequest): Promise<boolean> {
@@ -91,7 +116,13 @@ export async function isRemembered(req: Request, request: ConsentRequest): Promi
   const id = readCookieToken(req, REMEMBER_COOKIE);
   if (!id) return false;
 
-  const remembered = await getRememberedConsent(id);
+  let remembered: Awaited<ReturnType<typeof getRememberedConsent>>;
+  try {
+    remembered = await getRememberedConsent(id);
+  } catch {
+    reportStoreFailure('read');
+    return false;
+  }
   return (
     remembered !== null &&
     remembered.clientId === request.clientId &&

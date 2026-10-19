@@ -427,7 +427,7 @@ describe('the tool call site', () => {
       throwingClient(apiError(403, 'forbidden', PLAN_GATES[1])) as any,
       'key',
       'create_link',
-      { url: 'https://example.com' },
+      { url: 'https://acme.test' },
     );
 
     expect(res.isError).toBe(true);
@@ -446,7 +446,7 @@ describe('the tool call site', () => {
       throwingClient(error) as any,
       'key',
       'create_link',
-      { url: 'https://example.com' },
+      { url: 'https://acme.test' },
     );
 
     expect(res.isError).toBe(true);

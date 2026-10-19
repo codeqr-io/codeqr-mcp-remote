@@ -125,6 +125,37 @@ describe('tool inventory', () => {
     expect(declares('update_link', 'rules')).toBe(true);
   });
 
+  it('instructions describe the tools without steering the choice of tool or app', () => {
+    // The directory rejects model-readable text that pushes the model toward
+    // one plugin or away from another way of doing the task.
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/\bprefer/i);
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/\b(instead of|rather than|over) generating\b/i);
+  });
+
+  it('asks for the destination within the opening of the instructions', () => {
+    // OpenAI's guidance is to put what matters in the first 512 characters;
+    // it does not say the rest is cut, so this only pins the order.
+    const OPENING_LENGTH = 512;
+    const opening = SERVER_INSTRUCTIONS.slice(0, OPENING_LENGTH);
+    expect(opening).toMatch(/if they have not given one, ask for it/);
+    expect(opening).toMatch(/Never invent an address/);
+  });
+
+  it('mentions static codes only because create_qrcode takes static', () => {
+    const qr = TOOLS.find((t) => t.name === 'create_qrcode');
+    expect(SERVER_INSTRUCTIONS).toMatch(/can be made static when the person asks/);
+    expect('static' in ((qr?.inputSchema.properties ?? {}) as object)).toBe(true);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Every short link and dynamic QR code/);
+  });
+
+  it('only exempts from a web address the types create_qrcode takes without one', () => {
+    const qr = TOOLS.find((t) => t.name === 'create_qrcode')!;
+    const types = (qr.inputSchema.properties as { type: { enum: readonly string[] } }).type.enum;
+    expect(SERVER_INSTRUCTIONS).toMatch(/Codes for Wi-Fi, a contact card or plain text need no web address/);
+    for (const type of ['wifi', 'vcard', 'text']) expect(types).toContain(type);
+    expect((qr.inputSchema as { required?: string[] }).required ?? []).not.toContain('url');
+  });
+
   it('names every tool in the snake_case the directory expects', () => {
     for (const t of TOOLS) {
       expect(t.name).toMatch(/^[a-z][a-z0-9_]*$/);

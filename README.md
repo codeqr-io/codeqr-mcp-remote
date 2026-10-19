@@ -117,7 +117,7 @@ response = client.responses.create(
         "server_url": "https://mcp.codeqr.io/mcp",
         "require_approval": "never",
     }],
-    input="Create a short link for https://example.com",
+    input="Create a short link for https://codeqr.io",
 )
 ```
 

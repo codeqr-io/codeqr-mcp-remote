@@ -3,6 +3,11 @@
  * that screen when the same client asks again, as ChatGPT does on every
  * reconnection.
  *
+ * Only a connection that completed is remembered: pressing Continue marks the
+ * pending authorization, and the record is written when CodeQR returns a code.
+ * A refusal on CodeQR, or a return without a code, forgets whatever this
+ * browser remembered, so the screen comes back.
+ *
  * Skipping is safe here because nothing the screen guarded is skipped with it:
  * the authorization still goes through approveAuthorization, so the callback
  * only completes in the browser holding the consent binding; state, PKCE and
@@ -34,9 +39,15 @@ import { findVerifiedClient } from './verified-clients.js';
 export const REMEMBER_COOKIE = '__Host-codeqr_mcp_remember';
 
 export interface ConsentRequest {
-  client: { clientId: string };
+  clientId: string;
   redirectUri: string;
   scope: string;
+}
+
+const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: 'lax', path: '/' } as const;
+
+export function canRemember(redirectUri: string): boolean {
+  return findVerifiedClient(redirectUri) !== undefined;
 }
 
 /** Changes whenever the access asked of the user changes, which voids what they approved. */
@@ -45,35 +56,37 @@ export function scopeVersion(scope: string, codeqrScopes: readonly string[] = CO
 }
 
 /**
- * Records an approval of a verified client. A fresh id every time, so the
- * value in a cookie is always one this server chose.
+ * Records a completed connection to a verified client. A fresh id every time,
+ * so the value in a cookie is always one this server chose.
  */
 export async function rememberApproval(req: Request, res: Response, request: ConsentRequest): Promise<void> {
-  if (!findVerifiedClient(request.redirectUri)) return;
+  if (!canRemember(request.redirectUri)) return;
 
   const previous = readCookieToken(req, REMEMBER_COOKIE);
   const id = nanoid(COOKIE_TOKEN_LENGTH);
 
   await saveRememberedConsent(id, {
-    clientId: request.client.clientId,
+    clientId: request.clientId,
     redirectUri: request.redirectUri,
     scopeVersion: scopeVersion(request.scope),
   });
   if (previous) await forgetRememberedConsent(previous);
 
-  res.cookie(REMEMBER_COOKIE, id, {
-    httpOnly: true,
-    secure: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: REMEMBERED_CONSENT_TTL_SEC * 1000,
-  });
+  res.cookie(REMEMBER_COOKIE, id, { ...COOKIE_OPTIONS, maxAge: REMEMBERED_CONSENT_TTL_SEC * 1000 });
+}
+
+export async function forgetApproval(req: Request, res: Response): Promise<void> {
+  const id = readCookieToken(req, REMEMBER_COOKIE);
+  if (!id) return;
+
+  await forgetRememberedConsent(id);
+  res.clearCookie(REMEMBER_COOKIE, COOKIE_OPTIONS);
 }
 
 export async function isRemembered(req: Request, request: ConsentRequest): Promise<boolean> {
   // Checked again on the way in: a URI dropped from the verified list must
   // bring its screen back, whatever was remembered for it.
-  if (!findVerifiedClient(request.redirectUri)) return false;
+  if (!canRemember(request.redirectUri)) return false;
 
   const id = readCookieToken(req, REMEMBER_COOKIE);
   if (!id) return false;
@@ -81,7 +94,7 @@ export async function isRemembered(req: Request, request: ConsentRequest): Promi
   const remembered = await getRememberedConsent(id);
   return (
     remembered !== null &&
-    remembered.clientId === request.client.clientId &&
+    remembered.clientId === request.clientId &&
     remembered.redirectUri === request.redirectUri &&
     remembered.scopeVersion === scopeVersion(request.scope)
   );

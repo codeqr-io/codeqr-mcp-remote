@@ -46,7 +46,7 @@ import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-o
 import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding.js';
 import { sendConsentPage } from '../oauth/consent-page.js';
 import { resolveLocale } from '../oauth/i18n/index.js';
-import { isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
+import { canRemember, forgetApproval, isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
 import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
@@ -140,7 +140,12 @@ export function createOAuthRouter(): Router {
     const request = await checkAuthorizeRequest(req, req.query, res);
     if (!request) return;
 
-    if (await isRemembered(req, request)) {
+    const remembered = await isRemembered(req, {
+      clientId: request.client.clientId,
+      redirectUri: request.redirectUri,
+      scope: request.scope,
+    });
+    if (remembered) {
       await approveAuthorization(req, res, request, 'remembered');
       return;
     }
@@ -208,7 +213,6 @@ export function createOAuthRouter(): Router {
       return;
     }
 
-    await rememberApproval(req, res, request);
     await approveAuthorization(req, res, request, 'approve');
   });
 
@@ -260,6 +264,7 @@ export function createOAuthRouter(): Router {
     // The user pressed Refuse, or CodeQR turned the request down. Either way the
     // client is told, per RFC 6749 §4.1.2.1, instead of being left waiting.
     if (error) {
+      await forgetApproval(req, res);
       logEvent('oauth.callback', {
         outcome: 'error',
         reason: `codeqr_${error}`,
@@ -277,6 +282,7 @@ export function createOAuthRouter(): Router {
     }
 
     if (!code) {
+      await forgetApproval(req, res);
       logEvent('oauth.callback', {
         outcome: 'error',
         reason: 'no_code',
@@ -329,6 +335,10 @@ export function createOAuthRouter(): Router {
       keyHashPrefix: keyHashPrefix(codeqr.accessToken),
       ...callbackTrace(req),
     });
+
+    // A re-entry that skipped the screen is not marked, so skipping never
+    // extends what was remembered.
+    if (pending.rememberOnSuccess) await rememberApproval(req, res, pending);
 
     const redirectUrl = new URL(pending.redirectUri);
     redirectUrl.searchParams.set('code', authCode);
@@ -555,6 +565,7 @@ async function approveAuthorization(
     clientState: request.clientState,
     scope: request.scope,
     browserBinding: binding,
+    rememberOnSuccess: decision === 'approve' && canRemember(request.redirectUri),
   });
 
   logEvent('oauth.consent', {

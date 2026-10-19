@@ -617,6 +617,12 @@ describe('consent screen language', () => {
 
 describe('remembered consent', () => {
   const VERIFIED_REDIRECT = 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ';
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const REFUSALS: Array<[string, Record<string, string>]> = [
+    ['refuses on CodeQR', { error: 'access_denied', error_description: 'User refused' }],
+    ['comes back from CodeQR with another error', { error: 'server_error' }],
+    ['comes back from CodeQR without a code', {}],
+  ];
 
   function setCookieFor(response: request.Response, name: string) {
     return ([] as string[]).concat(response.headers['set-cookie'] ?? []).find((c) => c.startsWith(`${name}=`));
@@ -627,6 +633,49 @@ describe('remembered consent', () => {
   }
 
   const rememberHeader = (id: string) => `${REMEMBER_COOKIE}=${id}`;
+
+  /** Keeps what the server sets and drops what it clears, as a browser would. */
+  function browser(app: express.Express) {
+    const jar = new Map<string, string>();
+
+    const absorb = (response: request.Response) => {
+      for (const header of ([] as string[]).concat(response.headers['set-cookie'] ?? [])) {
+        const [pair = '', ...attributes] = header.split(';');
+        const eq = pair.indexOf('=');
+        const name = pair.slice(0, eq).trim();
+        const value = pair.slice(eq + 1).trim();
+        const expired = attributes.some((attribute) => {
+          const [key = '', raw = ''] = attribute.split('=');
+          const lower = key.trim().toLowerCase();
+          return (lower === 'max-age' && Number(raw) <= 0) || (lower === 'expires' && Date.parse(raw) <= Date.now());
+        });
+        if (expired || value === '') jar.delete(name);
+        else jar.set(name, value);
+      }
+      return response;
+    };
+
+    const send = async (req: request.Test) =>
+      absorb(await req.set('Cookie', [...jar].map(([name, value]) => `${name}=${value}`).join('; ')));
+
+    return {
+      get: (name: string) => jar.get(name),
+      visit: (params: Record<string, string>) => send(request(app).get('/oauth/authorize').query(params)),
+      decide: (params: Record<string, string>, decision = 'approve') =>
+        send(
+          request(app)
+            .post('/oauth/authorize')
+            .type('form')
+            .send({ ...params, csrf_token: jar.get(BINDING_COOKIE), decision }),
+        ),
+      returnFromCodeQR: (toCodeQR: request.Response, query: Record<string, string>) =>
+        send(
+          request(app)
+            .get('/oauth/callback')
+            .query({ ...query, state: new URL(toCodeQR.headers.location).searchParams.get('state')! }),
+        ),
+    };
+  }
 
   async function registerVerified(app: express.Express) {
     const { body } = await register(app, {
@@ -640,35 +689,43 @@ describe('remembered consent', () => {
     return { ...authorizeParams(clientId), redirect_uri: VERIFIED_REDIRECT, ...overrides };
   }
 
-  async function decideOnScreen(app: express.Express, params: Record<string, string>, decision = 'approve') {
-    const page = await request(app).get('/oauth/authorize').query(params);
-    expect(page.status).toBe(200);
-    const binding = bindingFrom(page)!;
-    return request(app)
-      .post('/oauth/authorize')
-      .type('form')
-      .set('Cookie', cookieHeader(binding))
-      .send({ ...params, csrf_token: binding, decision });
+  /** Screen, Continue, and a code back from CodeQR. */
+  async function connect(b: ReturnType<typeof browser>, params: Record<string, string>) {
+    expect((await b.visit(params)).status).toBe(200);
+    const approved = await b.decide(params);
+    expect(approved.status).toBe(303);
+    const callback = await b.returnFromCodeQR(approved, { code: 'codeqr-code' });
+    expect(callback.status).toBe(302);
+    return callback;
   }
 
   async function rememberedId(app: express.Express, params: Record<string, string>) {
-    const approved = await decideOnScreen(app, params);
-    return cookieValue(approved, REMEMBER_COOKIE)!;
+    const b = browser(app);
+    await connect(b, params);
+    return b.get(REMEMBER_COOKIE)!;
   }
 
   function comeBack(app: express.Express, params: Record<string, string>, cookies: string[]) {
     return request(app).get('/oauth/authorize').set('Cookie', cookies.join('; ')).query(params);
   }
 
-  it('remembers an approval of the verified client in a __Host- cookie and a record', async () => {
+  it('remembers an approval of the verified client only once the connection completes', async () => {
     const app = makeApp();
     const clientId = await registerVerified(app);
+    const b = browser(app);
 
-    const approved = await decideOnScreen(app, paramsFor(clientId));
-    const cookie = setCookieFor(approved, REMEMBER_COOKIE)!;
-    const id = cookieValue(approved, REMEMBER_COOKIE)!;
+    await b.visit(paramsFor(clientId));
+    const approved = await b.decide(paramsFor(clientId));
 
     expect(approved.status).toBe(303);
+    expect(setCookieFor(approved, REMEMBER_COOKIE)).toBeUndefined();
+    expect(store.saveRememberedConsent).not.toHaveBeenCalled();
+
+    const callback = await b.returnFromCodeQR(approved, { code: 'codeqr-code' });
+    const cookie = setCookieFor(callback, REMEMBER_COOKIE)!;
+    const id = cookieValue(callback, REMEMBER_COOKIE)!;
+
+    expect(callback.status).toBe(302);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/Secure/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
@@ -680,28 +737,81 @@ describe('remembered consent', () => {
       redirectUri: VERIFIED_REDIRECT,
       scopeVersion: scopeVersion('mcp:tools'),
     });
+    expect((await b.visit(paramsFor(clientId))).status).toBe(303);
+  });
+
+  it.each(REFUSALS)('remembers nothing when the user continues and then %s', async (_label, query) => {
+    const app = makeApp();
+    const clientId = await registerVerified(app);
+    const b = browser(app);
+
+    await b.visit(paramsFor(clientId));
+    const approved = await b.decide(paramsFor(clientId));
+    const back = await b.returnFromCodeQR(approved, query);
+
+    expect(back.status).toBe(302);
+    expect(new URL(back.headers.location).searchParams.get('error')).toBeTruthy();
+    expect(b.get(REMEMBER_COOKIE)).toBeUndefined();
+    expect(store.saveRememberedConsent).not.toHaveBeenCalled();
+    expect((await b.visit(paramsFor(clientId))).status).toBe(200);
+  });
+
+  it.each(REFUSALS)('forgets an earlier approval when this browser later %s', async (_label, query) => {
+    const app = makeApp();
+    const clientId = await registerVerified(app);
+    const b = browser(app);
+    await connect(b, paramsFor(clientId));
+    const id = b.get(REMEMBER_COOKIE)!;
+
+    const skipped = await b.visit(paramsFor(clientId));
+    expect(skipped.status).toBe(303);
+    const refused = await b.returnFromCodeQR(skipped, query);
+
+    expect(setCookieFor(refused, REMEMBER_COOKIE)).toBeDefined();
+    expect(b.get(REMEMBER_COOKIE)).toBeUndefined();
+    expect(await store.getRememberedConsent(id)).toBeNull();
+    expect((await b.visit(paramsFor(clientId))).status).toBe(200);
+  });
+
+  it('does not extend the approval when a re-entry that skipped the screen completes', async () => {
+    const app = makeApp();
+    const clientId = await registerVerified(app);
+    const b = browser(app);
+    await connect(b, paramsFor(clientId));
+    const id = b.get(REMEMBER_COOKIE)!;
+    const { expiresAt } = (await store.getRememberedConsent(id))!;
+    vi.mocked(store.saveRememberedConsent).mockClear();
+
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + ONE_DAY_MS);
+    try {
+      const skipped = await b.visit(paramsFor(clientId));
+      expect(skipped.status).toBe(303);
+      const callback = await b.returnFromCodeQR(skipped, { code: 'codeqr-code' });
+
+      expect(callback.status).toBe(302);
+      expect(setCookieFor(callback, REMEMBER_COOKIE)).toBeUndefined();
+      expect(store.saveRememberedConsent).not.toHaveBeenCalled();
+      expect((await store.getRememberedConsent(id))!.expiresAt).toBe(expiresAt);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('skips the screen for the same client, redirect_uri and scope, and the callback completes in this browser', async () => {
     const app = makeApp();
     const clientId = await registerVerified(app);
-    const id = await rememberedId(app, paramsFor(clientId));
+    const b = browser(app);
+    await connect(b, paramsFor(clientId));
 
-    const back = await comeBack(app, paramsFor(clientId), [rememberHeader(id)]);
+    const back = await b.visit(paramsFor(clientId));
 
     expect(back.status).toBe(303);
     expect(back.headers['cache-control']).toBe('no-store');
     const target = new URL(back.headers.location);
     expect(target.origin + target.pathname).toBe('https://app.example.test/oauth/authorize');
     expect(target.searchParams.get('mcp_client')).toBe('chatgpt');
-    const state = target.searchParams.get('state')!;
-    const binding = bindingFrom(back)!;
-    expect(binding).toMatch(/^[A-Za-z0-9_-]{32}$/);
 
-    const callback = await request(app)
-      .get('/oauth/callback')
-      .set('Cookie', cookieHeader(binding))
-      .query({ code: 'codeqr-code', state });
+    const callback = await b.returnFromCodeQR(back, { code: 'codeqr-code' });
 
     expect(callback.status).toBe(302);
     const delivered = new URL(callback.headers.location);
@@ -714,8 +824,11 @@ describe('remembered consent', () => {
     const app = makeApp();
     const clientId = await registerVerified(app);
     const id = await rememberedId(app, paramsFor(clientId));
+    mockExchange.mockClear();
 
     const back = await comeBack(app, paramsFor(clientId), [rememberHeader(id)]);
+    const binding = bindingFrom(back)!;
+    expect(binding).toMatch(/^[A-Za-z0-9_-]{32}$/);
     const state = new URL(back.headers.location).searchParams.get('state')!;
     const elsewhere = await request(app).get('/oauth/callback').query({ code: 'c', state });
 
@@ -778,18 +891,21 @@ describe('remembered consent', () => {
     }
   });
 
-  it('remembers neither an unverified client nor a refusal', async () => {
+  it('remembers neither an unverified client nor a refusal on this screen', async () => {
     const app = makeApp();
     const unverified = await registerClient(app, 'ChatGPT');
     const verified = await registerVerified(app);
 
-    const approvedUnverified = await decideOnScreen(app, authorizeParams(unverified));
-    const refused = await decideOnScreen(app, paramsFor(verified), 'deny');
+    const connectedUnverified = browser(app);
+    await connect(connectedUnverified, authorizeParams(unverified));
+    const refusedHere = browser(app);
+    await refusedHere.visit(paramsFor(verified));
+    const refused = await refusedHere.decide(paramsFor(verified), 'deny');
 
-    expect(approvedUnverified.status).toBe(303);
     expect(refused.status).toBe(303);
-    expect(setCookieFor(approvedUnverified, REMEMBER_COOKIE)).toBeUndefined();
-    expect(setCookieFor(refused, REMEMBER_COOKIE)).toBeUndefined();
+    expect(new URL(refused.headers.location).searchParams.get('error')).toBe('access_denied');
+    expect(connectedUnverified.get(REMEMBER_COOKIE)).toBeUndefined();
+    expect(refusedHere.get(REMEMBER_COOKIE)).toBeUndefined();
     expect(store.saveRememberedConsent).not.toHaveBeenCalled();
   });
 
@@ -811,9 +927,6 @@ describe('remembered consent', () => {
     const app = makeApp();
     const clientId = await registerVerified(app);
     const id = await rememberedId(app, paramsFor(clientId));
-    // A client that completed an authorization is kept for good; without this
-    // the unused-registration expiry would answer before the remembered one.
-    await store.markClientUsed(clientId);
 
     const later = Date.now() + (store.REMEMBERED_CONSENT_TTL_SEC + 1) * 1000;
     const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
@@ -856,25 +969,21 @@ describe('remembered consent', () => {
     expect(back.status).toBe(200);
   });
 
-  it('replaces the remembered id on every approval and forgets the previous one', async () => {
+  it('replaces the remembered id on every completed approval and forgets the previous one', async () => {
     const app = makeApp();
     const clientId = await registerVerified(app);
-    const first = await rememberedId(app, paramsFor(clientId));
+    const b = browser(app);
+    await connect(b, paramsFor(clientId));
+    const first = b.get(REMEMBER_COOKIE)!;
 
-    // The screen shows again (here: a new scope), and the browser still holds the old cookie.
+    // A new scope brings the screen back while the browser still holds the old cookie.
     const params = paramsFor(clientId, { scope: 'mcp:tools mcp:admin' });
-    const page = await comeBack(app, params, [rememberHeader(first)]);
-    const binding = bindingFrom(page)!;
-    const approved = await request(app)
-      .post('/oauth/authorize')
-      .type('form')
-      .set('Cookie', [cookieHeader(binding), rememberHeader(first)].join('; '))
-      .send({ ...params, csrf_token: binding, decision: 'approve' });
-    const second = cookieValue(approved, REMEMBER_COOKIE)!;
+    await connect(b, params);
+    const second = b.get(REMEMBER_COOKIE)!;
 
     expect(second).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(second).not.toBe(first);
     expect(await store.getRememberedConsent(first)).toBeNull();
-    expect((await comeBack(app, params, [rememberHeader(second)])).status).toBe(303);
+    expect((await b.visit(params)).status).toBe(303);
   });
 });

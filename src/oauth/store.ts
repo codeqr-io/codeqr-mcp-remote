@@ -81,6 +81,8 @@ export interface PendingAuthorization {
   scope: string;
   /** The consent cookie of the browser that approved; see browser-binding.ts. */
   browserBinding: string;
+  /** Set on an explicit approval of a verified client; see remembered-consent.ts. */
+  rememberOnSuccess?: boolean;
   expiresAt: number;
 }
 
@@ -498,6 +500,7 @@ export async function createPendingAuthorization(params: {
   clientState?: string;
   scope: string;
   browserBinding: string;
+  rememberOnSuccess?: boolean;
 }): Promise<string> {
   const state = nanoid(48);
   const entry: PendingAuthorization = {

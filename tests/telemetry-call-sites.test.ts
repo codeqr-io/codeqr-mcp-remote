@@ -922,8 +922,12 @@ describe('remembered consent events', () => {
       .type('form')
       .set('Cookie', cookieHeader(firstBinding))
       .send({ ...params, csrf_token: firstBinding, decision: 'approve' });
+    const connected = await request(app)
+      .get('/oauth/callback')
+      .set('Cookie', cookieHeader(firstBinding))
+      .query({ code: CODEQR_CODE, state: new URL(approved.headers.location).searchParams.get('state')! });
     const rememberCookie = ([] as string[])
-      .concat(approved.headers['set-cookie'] ?? [])
+      .concat(connected.headers['set-cookie'] ?? [])
       .find((c) => c.startsWith(`${REMEMBER_COOKIE}=`))!;
     const rememberId = rememberCookie.slice(REMEMBER_COOKIE.length + 1).split(';')[0];
 

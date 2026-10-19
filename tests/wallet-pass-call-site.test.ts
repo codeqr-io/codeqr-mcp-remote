@@ -46,7 +46,7 @@ describe('create_qrcode', () => {
     const { client, calls } = spyClient();
 
     const res = await call(client, 'create_qrcode', {
-      url: 'https://example.com',
+      url: 'https://acme.test',
       title: 'Central Bakery QR',
       walletPass,
     });

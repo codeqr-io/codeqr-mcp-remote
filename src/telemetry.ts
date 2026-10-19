@@ -68,6 +68,8 @@ export interface EventFields {
   clientVersion?: string;
   httpMethod?: string;
   qrType?: string;
+  /** A create_qrcode call asked for a static code. */
+  qrStatic?: boolean;
   placeholderDestination?: boolean;
   hasUtm?: boolean;
   hasTag?: boolean;
@@ -104,6 +106,7 @@ export const EVENT_FIELDS = [
   'clientVersion',
   'httpMethod',
   'qrType',
+  'qrStatic',
   'placeholderDestination',
   'hasUtm',
   'hasTag',

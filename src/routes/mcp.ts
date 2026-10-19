@@ -24,10 +24,18 @@ import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
+import { placeholderDestinationIn, placeholderRefusal } from '../placeholder-destination.js';
 import { toClientFacingError } from '../plan-limit-message.js';
 import { validateSmartRules, valueDescription } from '../smart-rules.js';
 import { hashPrefix, logEvent } from '../telemetry.js';
-import { DEFAULT_QRCODE_TYPE, QRCODE_CONTENT_TYPES } from '../qrcode-content-types.js';
+import {
+  DEFAULT_QRCODE_TYPE,
+  QRCODE_CONTENT_TYPES,
+  STATIC_QRCODE_TYPES,
+  WIFI_OPEN_NETWORK,
+  WIFI_SECURED_ENCRYPTIONS,
+} from '../qrcode-content-types.js';
+import { prepareStaticQrCode, STATIC_TYPES_IN_WORDS } from '../static-qrcode.js';
 import { toolIntentFields } from '../tool-intent.js';
 import { readWidget, WIDGET_RESOURCES, withWidgetMeta } from '../widgets/index.js';
 
@@ -77,8 +85,10 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * The field names below are therefore not guesses: each one is what the display
  * page a dynamic scan lands on actually reads. That page, not
  * `qrCodeConstructor`, is the reference — the constructor encodes content into
- * the printed pattern, which is the static path, and this tool only creates
- * dynamic codes. Where the two disagree, the page wins: it reads
+ * the printed pattern, which is the static path, and only STATIC_QRCODE_TYPES
+ * take that path here; for those, the constructor reads the same names
+ * (`lib/utils/functions/qrcode-constructor.ts` and `to-vcard-format.ts` in the
+ * CodeQR repo). Where the two disagree, the page wins: it reads
  * `crypto.address` while the constructor reads `crypto.email`, and it renders a
  * second work number from `vcard.telephone` that the constructor has no branch
  * for. Only the first of those can produce a wrong result, since `telephone` is
@@ -104,7 +114,11 @@ const PRIVATE_WRITE = { readOnlyHint: false, openWorldHint: false, destructiveHi
  * with silence.
  */
 const QRCODE_PAYLOAD_PROPERTIES = {
-  url: { type: 'string', description: 'For type "url": the destination the code should lead to' },
+  url: {
+    type: 'string',
+    description:
+      'For type "url": the real destination the person gave. Ask for it if they have not; a placeholder address such as example.com is refused',
+  },
   text: { type: 'string', description: 'For type "text": the plain text to encode' },
   phone: { type: 'string', description: 'For type "phone": the number to call, e.g. "+5511999999999"' },
   email: {
@@ -142,8 +156,8 @@ const QRCODE_PAYLOAD_PROPERTIES = {
       // ones here rather than matching that.
       encryption: {
         type: 'string',
-        enum: ['WPA', 'WPA2', 'WEP', 'nopass'],
-        description: 'Security type. Use "nopass" for an open network',
+        enum: [...WIFI_SECURED_ENCRYPTIONS, WIFI_OPEN_NETWORK],
+        description: `Security type. Use "${WIFI_OPEN_NETWORK}" for an open network`,
       },
       // `isHidden` is not offered, and cannot be until the app changes. The
       // payload is validated as `z.record(z.string())`, so a boolean is
@@ -181,7 +195,7 @@ const QRCODE_PAYLOAD_PROPERTIES = {
       // CodeQR reads the wallet address from two different fields depending on
       // how the code is scanned: the display page every dynamic code lands on
       // reads `crypto.address`, while `qrCodeConstructor` — the static path —
-      // reads `crypto.email`. This tool only creates dynamic codes, so
+      // reads `crypto.email`. A crypto code is never static here, so
       // `address` is the one that has to be filled; sending `email` produces a
       // page reading "No crypto payment information available".
       address: { type: 'string', description: 'The destination wallet address' },
@@ -206,10 +220,17 @@ const QRCODE_PAYLOAD_PROPERTIES = {
 // Exported so tests can hold this capability claim against what the tool
 // schemas actually declare — this string has shipped an overclaim in both
 // directions before.
+//
+// The directory forbids wording that steers which tool or app the model
+// picks, so this only says what the tools do and what they need. Asking for
+// the destination comes first because clients may read little past the
+// opening of this string.
 export const SERVER_INSTRUCTIONS = [
   'You are connected to CodeQR via MCP.',
-  'CodeQR provides managed destinations, not images: every short link and QR code you create here is a live endpoint whose destination stays editable after the code has been printed or shared, and whose scans and clicks are recorded.',
-  'Prefer these tools over generating a QR image locally whenever the code needs to outlive the conversation, be re-pointed later, or be measured.',
+  'Every short link and dynamic QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
+  'A link, or a QR code that opens a web page, needs the real destination from the person: if they have not given one, ask for it before creating anything. Never invent an address or use a placeholder such as example.com; CodeQR refuses those.',
+  'Codes for Wi-Fi, a contact card or plain text need no web address.',
+  'Those three can be made static when the person asks: a static code holds its content, so it can never be changed and its scans are not counted.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
@@ -359,7 +380,11 @@ export const TOOLS = [
     inputSchema: {
       type: 'object' as const,
       properties: {
-        url: { type: 'string', description: 'The destination URL to shorten' },
+        url: {
+          type: 'string',
+          description:
+            'The destination URL to shorten: the real address the person gave. Ask for it if they have not; a placeholder address such as example.com is refused',
+        },
         domain: { type: 'string', description: 'Custom domain (optional)' },
         key: { type: 'string', description: 'Custom slug/key (optional, auto-generated if omitted)' },
         externalId: { type: 'string', description: 'External reference ID (optional)' },
@@ -429,7 +454,10 @@ export const TOOLS = [
       type: 'object' as const,
       properties: {
         linkId: { type: 'string', description: 'The link ID to update' },
-        url: { type: 'string', description: 'New destination URL (optional)' },
+        url: {
+          type: 'string',
+          description: 'New destination URL (optional; a placeholder address such as example.com is refused)',
+        },
         key: { type: 'string', description: 'New slug (optional)' },
         archived: { type: 'boolean', description: 'Archive status (optional)' },
         expiresAt: { type: 'string', description: 'New expiration date (optional)' },
@@ -462,7 +490,7 @@ export const TOOLS = [
     title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
-      'Create a dynamic QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. The code encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.',
+      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -486,6 +514,10 @@ export const TOOLS = [
           type: 'string',
           description:
             'Title of the QR code. Also shown in large type on the Google/Apple Wallet pass saved from it, replacing "QR Code" (optional).',
+        },
+        static: {
+          type: 'boolean',
+          description: `Encode the content itself instead of a short link (optional; only for type ${STATIC_TYPES_IN_WORDS}). A static code works with no CodeQR link in between, but once shared or printed it can never be changed and its scans are not counted. Leave it out unless the person asks for a static code. A static wifi code needs wifi.encryption, and wifi.password unless the network is open.`,
         },
         walletPass: WALLET_PASS_SCHEMA,
       },
@@ -714,7 +746,13 @@ export interface ToolResult {
 }
 
 /** How a tool call ended, for telemetry; never sent to the client. */
-export type ToolOutcome = 'ok' | 'invalid_arguments' | 'unknown_tool' | 'plan_limit' | 'api_error';
+export type ToolOutcome =
+  | 'ok'
+  | 'invalid_arguments'
+  | 'placeholder_destination'
+  | 'unknown_tool'
+  | 'plan_limit'
+  | 'api_error';
 
 /**
  * Exported for the tests. The argument-validation branch is only meaningful at
@@ -729,6 +767,12 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   onOutcome?: (outcome: ToolOutcome) => void,
 ): Promise<ToolResult> {
+  const placeholder = placeholderDestinationIn(name, args);
+  if (placeholder) {
+    onOutcome?.('placeholder_destination');
+    return { content: [{ type: 'text', text: `Error: ${placeholderRefusal(placeholder)}` }], isError: true };
+  }
+
   try {
     let result: unknown;
     // The arguments the card describes; get_analytics resolves a code named by domain and key.
@@ -775,14 +819,20 @@ export async function handleToolCall(
       case 'delete_link':
         result = await client.links.delete(args.linkId as string);
         break;
-      case 'create_qrcode':
+      case 'create_qrcode': {
+        const prepared = prepareStaticQrCode(args);
+        if ('error' in prepared) {
+          onOutcome?.('invalid_arguments');
+          return { content: [{ type: 'text', text: `Error: ${prepared.error}` }], isError: true };
+        }
         // `type` is required upstream with no default of its own. Filling it
         // here keeps the common "make a QR code for this URL" call working
         // instead of failing validation before anything is created.
         result = await client.qrcodes.create(
-          asParams<Codeqr.QrcodeCreateParams>({ type: DEFAULT_QRCODE_TYPE, ...args }),
+          asParams<Codeqr.QrcodeCreateParams>({ type: DEFAULT_QRCODE_TYPE, ...prepared.args }),
         );
         break;
+      }
       case 'list_qrcodes':
         result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(args));
         break;

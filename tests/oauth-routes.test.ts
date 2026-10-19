@@ -987,3 +987,186 @@ describe('remembered consent', () => {
     expect((await b.visit(params)).status).toBe(303);
   });
 });
+
+describe('GET /oauth/callback on mobile', () => {
+  const ANDROID_UA =
+    'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
+  const DESKTOP_UA =
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
+  const VERIFIED_REDIRECT = 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ';
+
+  function loggedEvents(spy: { mock: { calls: unknown[][] } }) {
+    return spy.mock.calls
+      .map(([chunk]) => {
+        try {
+          return JSON.parse(String(chunk)) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((entry): entry is Record<string, unknown> => entry?.event === 'oauth.callback');
+  }
+
+  /** A fresh authorization, answered by CodeQR with `query`, from a browser with the given headers. */
+  async function callbackWith(
+    query: Record<string, string>,
+    headers: Record<string, string>,
+    redirectUri = CLIENT_REDIRECT,
+  ) {
+    const app = makeApp();
+    const { body } = await register(app, { client_name: 'Test Client', redirect_uris: [redirectUri] });
+    const params = { ...authorizeParams(body.client_id), redirect_uri: redirectUri };
+    const consent = await request(app).get('/oauth/authorize').query(params);
+    const binding = bindingFrom(consent)!;
+    const approved = await request(app)
+      .post('/oauth/authorize')
+      .type('form')
+      .set('Cookie', cookieHeader(binding))
+      .send({ ...params, csrf_token: binding, decision: 'approve' });
+    const state = new URL(approved.headers.location).searchParams.get('state')!;
+
+    return request(app)
+      .get('/oauth/callback')
+      .set('Cookie', cookieHeader(binding))
+      .set(headers)
+      .query({ ...query, state });
+  }
+
+  function handoffHref(response: request.Response): string {
+    const match = /<a class="button" href="([^"]*)"/.exec(response.text);
+    return match![1]!.replaceAll('&amp;', '&');
+  }
+
+  /** The two callbacks differ in their state, which is random; the URL they lead to is otherwise the same. */
+  function withoutCode(url: string) {
+    const target = new URL(url);
+    target.searchParams.delete('code');
+    return target.toString();
+  }
+
+  it('ends the connection on a page whose link is the exact URL desktop is redirected to', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const desktop = await callbackWith({ code: 'codeqr-code' }, { 'User-Agent': DESKTOP_UA });
+      const mobile = await callbackWith({ code: 'codeqr-code' }, { 'User-Agent': ANDROID_UA });
+
+      expect(desktop.status).toBe(302);
+      expect(mobile.status).toBe(200);
+      expect(mobile.headers.location).toBeUndefined();
+      expect(mobile.headers['content-type']).toMatch(/text\/html/);
+      expect(mobile.headers['content-security-policy']).toContain("default-src 'none'");
+      expect(mobile.headers['x-frame-options']).toBe('DENY');
+      expect(mobile.headers['x-content-type-options']).toBe('nosniff');
+      expect(mobile.headers['referrer-policy']).toBe('no-referrer');
+      expect(mobile.headers['cache-control']).toBe('no-store');
+      expect(mobile.text).not.toMatch(/<script|http-equiv/i);
+
+      const target = new URL(handoffHref(mobile));
+      expect(target.origin + target.pathname).toBe(CLIENT_REDIRECT);
+      expect(target.searchParams.get('code')).toBeTruthy();
+      expect(target.searchParams.get('state')).toBe('client-state-1');
+      expect(withoutCode(handoffHref(mobile))).toBe(withoutCode(desktop.headers.location));
+      expect(mobile.text).toContain('Connected to CodeQR. Tap to go back to your app.');
+
+      const [desktopLog, mobileLog] = [loggedEvents(stdout).at(-2), loggedEvents(stdout).at(-1)];
+      expect(desktopLog).toMatchObject({ outcome: 'ok' });
+      expect(desktopLog).not.toHaveProperty('mobileHandoff');
+      expect(mobileLog).toMatchObject({ outcome: 'ok', mobileHandoff: true });
+    } finally {
+      stdout.mockRestore();
+    }
+  });
+
+  it('escapes the ampersands in the link and keeps the URL intact', async () => {
+    const response = await callbackWith({ code: 'codeqr-code' }, { 'User-Agent': ANDROID_UA });
+
+    expect(response.text).toMatch(/href="[^"]*code=[^"]*&amp;state=client-state-1"/);
+    expect(response.text).not.toMatch(/href="[^"]*&state=/);
+  });
+
+  it('names a verified client and shows its logo', async () => {
+    const response = await callbackWith(
+      { code: 'codeqr-code' },
+      { 'User-Agent': ANDROID_UA },
+      VERIFIED_REDIRECT,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('Connected to CodeQR. Tap to go back to ChatGPT.');
+    expect(response.text).toContain('class="client-logo"');
+    expect(handoffHref(response)).toMatch(/^https:\/\/chatgpt\.com\/connector\/oauth\/fcLW7Kbi1AnJ\?code=/);
+  });
+
+  it('speaks the language of Accept-Language', async () => {
+    const response = await callbackWith(
+      { code: 'codeqr-code' },
+      { 'User-Agent': ANDROID_UA, 'Accept-Language': 'pt-BR,pt;q=0.9' },
+    );
+
+    expect(response.text).toContain('<html lang="pt-br">');
+    expect(response.text).toContain('Conectado à CodeQR. Toque para voltar ao seu app.');
+  });
+
+  it('keeps the remembered-consent cookie behaviour of the redirect', async () => {
+    const app = makeApp();
+    const { body } = await register(app, { client_name: 'ChatGPT', redirect_uris: [VERIFIED_REDIRECT] });
+    const params = { ...authorizeParams(body.client_id), redirect_uri: VERIFIED_REDIRECT };
+    const consent = await request(app).get('/oauth/authorize').query(params);
+    const binding = bindingFrom(consent)!;
+    const approved = await request(app)
+      .post('/oauth/authorize')
+      .type('form')
+      .set('Cookie', cookieHeader(binding))
+      .send({ ...params, csrf_token: binding, decision: 'approve' });
+    const state = new URL(approved.headers.location).searchParams.get('state')!;
+
+    const mobile = await request(app)
+      .get('/oauth/callback')
+      .set('Cookie', cookieHeader(binding))
+      .set('User-Agent', ANDROID_UA)
+      .query({ code: 'codeqr-code', state });
+
+    expect(mobile.status).toBe(200);
+    const cookie = ([] as string[])
+      .concat(mobile.headers['set-cookie'] ?? [])
+      .find((c) => c.startsWith(`${REMEMBER_COOKIE}=`));
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toContain(`Max-Age=${store.REMEMBERED_CONSENT_TTL_SEC}`);
+  });
+
+  it('hands an error from CodeQR back with the same tap, and desktop still redirects', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const query = { error: 'access_denied', error_description: 'User refused' };
+      const desktop = await callbackWith(query, { 'User-Agent': DESKTOP_UA });
+      const mobile = await callbackWith(query, { 'User-Agent': ANDROID_UA });
+
+      expect(desktop.status).toBe(302);
+      expect(mobile.status).toBe(200);
+      expect(mobile.text).toContain('The connection was not completed. Tap to go back to your app.');
+
+      const target = new URL(handoffHref(mobile));
+      expect(target.origin + target.pathname).toBe(CLIENT_REDIRECT);
+      expect(target.searchParams.get('error')).toBe('access_denied');
+      expect(target.searchParams.get('error_description')).toBe('User refused');
+      expect(target.searchParams.get('state')).toBe('client-state-1');
+      expect(target.searchParams.get('code')).toBeNull();
+      expect(handoffHref(mobile)).toBe(desktop.headers.location);
+      expect(mockExchange).not.toHaveBeenCalled();
+      expect(loggedEvents(stdout).at(-1)).toMatchObject({ reason: 'codeqr_access_denied', mobileHandoff: true });
+    } finally {
+      stdout.mockRestore();
+    }
+  });
+
+  it('hands a failed token exchange back the same way', async () => {
+    mockExchange.mockRejectedValueOnce(new Error('exchange blew up'));
+
+    const response = await callbackWith({ code: 'codeqr-code' }, { 'User-Agent': ANDROID_UA });
+
+    expect(response.status).toBe(200);
+    const target = new URL(handoffHref(response));
+    expect(target.searchParams.get('error')).toBe('server_error');
+    expect(target.searchParams.get('state')).toBe('client-state-1');
+  });
+});

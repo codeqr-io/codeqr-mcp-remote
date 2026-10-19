@@ -72,6 +72,8 @@ export interface EventFields {
   hasUtm?: boolean;
   hasTag?: boolean;
   hasRules?: boolean;
+  /** The callback ended on the tap-to-return page instead of a redirect. */
+  mobileHandoff?: boolean;
 }
 
 export const EVENT_FIELDS = [
@@ -106,6 +108,7 @@ export const EVENT_FIELDS = [
   'hasUtm',
   'hasTag',
   'hasRules',
+  'mobileHandoff',
 ] as const satisfies ReadonlyArray<keyof EventFields>;
 
 // A field added to EventFields but not to EVENT_FIELDS would be dropped by

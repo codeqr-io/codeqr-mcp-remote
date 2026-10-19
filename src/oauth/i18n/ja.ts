@@ -29,4 +29,10 @@ export const ja: Messages = {
   'consent.continue': '続行',
   'consent.privacy': 'プライバシーポリシー',
   'consent.terms': '利用規約',
+  'handoff.pageTitle': 'アプリに戻る | CodeQR',
+  'handoff.successVerified': 'CodeQR に接続しました。タップして {client} に戻ります。',
+  'handoff.successGeneric': 'CodeQR に接続しました。タップしてアプリに戻ります。',
+  'handoff.errorVerified': '接続は完了しませんでした。タップして {client} に戻ります。',
+  'handoff.errorGeneric': '接続は完了しませんでした。タップしてアプリに戻ります。',
+  'handoff.button': '戻る',
 };

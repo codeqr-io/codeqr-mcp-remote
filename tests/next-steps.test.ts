@@ -57,7 +57,7 @@ describe('nextStepsText', () => {
     expect(fixed).toMatch(/static/);
   });
 
-  // The short link of a static code is never set up to redirect.
+  // A static code is printed with its content; its short link is not what people scan.
   it('does not offer a static code\'s short link as live, but still gives its image', () => {
     const fixed = nextStepsText({ kind: 'qrcode', created: { ...created, isStatic: true }, appUrl: APP, apiUrl: API });
 

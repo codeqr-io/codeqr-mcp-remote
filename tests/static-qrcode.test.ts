@@ -17,9 +17,23 @@ describe('prepareStaticQrCode', () => {
     expect(prepareStaticQrCode({ ...args, static: false })).toEqual({ args: { ...args, static: false } });
   });
 
-  it.each(STATIC_QRCODE_TYPES.filter((type) => type !== 'wifi'))('accepts a static %s code as sent', (type) => {
-    const args = { type, static: true };
+  it('accepts a static text code as sent', () => {
+    const args = { type: 'text', static: true, text: 'Table 4' };
     expect(prepareStaticQrCode(args)).toEqual({ args });
+  });
+
+  it('accepts a static contact card with something to print', () => {
+    for (const vcard of [{ name: 'Ana' }, { phone: '+5511999999999' }, { address: 'Rua A, 1', city: 'Lisboa' }]) {
+      const args = { type: 'vcard', static: true, vcard };
+      expect(prepareStaticQrCode(args)).toEqual({ args });
+    }
+  });
+
+  it('refuses a static contact card with nothing it would encode', () => {
+    for (const vcard of [undefined, {}, { name: '' }, { city: 'Lisboa', country: 'PT' }]) {
+      const prepared = prepareStaticQrCode({ type: 'vcard', static: true, vcard });
+      expect('error' in prepared && prepared.error).toMatch(/needs at least one of vcard\.name/);
+    }
   });
 
   it.each(QRCODE_CONTENT_TYPES.filter((type) => !(STATIC_QRCODE_TYPES as readonly string[]).includes(type)))(

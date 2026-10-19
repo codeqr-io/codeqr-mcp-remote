@@ -86,7 +86,7 @@ describe('renderCard', () => {
     expect(buttons(root).map((button) => button.textContent)).toEqual(['Open in CodeQR']);
   });
 
-  it('does not offer the short link of a static code, which does not redirect', () => {
+  it('does not offer the short link of a static code, which is not what the code encodes', () => {
     const { root } = render(qrResult({ isStatic: true, type: 'wifi', title: null, destination: undefined }));
 
     expect(root.querySelector('.link')).toBeNull();

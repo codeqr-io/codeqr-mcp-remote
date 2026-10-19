@@ -77,7 +77,7 @@ export function renderCard(
 
   const typeLabel = view.kind === 'qrcode' && view.type && view.type !== 'url' ? typeName(view.type, strings) : undefined;
   const destination = view.destination ? withoutScheme(view.destination) : undefined;
-  // A static code's short link does not redirect, so nothing here offers it.
+  // A static code is printed with its content, not its short link, so the card does not offer the link to share.
   const heading = view.title ?? destination ?? typeLabel ?? (view.isStatic ? strings.static : shown);
 
   if (view.imageUrl) {

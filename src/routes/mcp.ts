@@ -227,9 +227,10 @@ const QRCODE_PAYLOAD_PROPERTIES = {
 // opening of this string.
 export const SERVER_INSTRUCTIONS = [
   'You are connected to CodeQR via MCP.',
-  'Every short link and QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
+  'Every short link and dynamic QR code created here is a live endpoint: where it leads can be changed after it has been printed or shared, and its scans and clicks are recorded.',
   'A link, or a QR code that opens a web page, needs the real destination from the person: if they have not given one, ask for it before creating anything. Never invent an address or use a placeholder such as example.com; CodeQR refuses those.',
   'Codes for Wi-Fi, a contact card or plain text need no web address.',
+  'Those three can be made static when the person asks: a static code holds its content, so it can never be changed and its scans are not counted.',
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',

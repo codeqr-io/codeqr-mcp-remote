@@ -42,9 +42,9 @@ export function nextStepsText({ kind, created, workspaceSlug, appUrl, apiUrl }: 
   const noun = kind === 'qrcode' ? 'QR code' : 'short link';
   const section = kind === 'qrcode' ? 'qrcodes' : 'links';
 
-  // A static code's short link is never set up to redirect, so it is not
-  // offered as something to share; /qr still finds the code by it and draws
-  // the content the code holds.
+  // A static code is printed with its content, not with its short link, so
+  // the link is not what people scan and is not offered as the thing to share;
+  // /qr still finds the code by it and draws the content the code holds.
   const lines = [created.isStatic ? `Your static ${noun} is ready.` : `Your ${noun} is live: ${shortLink}`];
   if (kind === 'qrcode') lines.push(`QR image: ${qrImageUrl(apiUrl, shortLink)}`);
   if (workspaceSlug) {

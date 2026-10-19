@@ -64,6 +64,23 @@ describe('prepareStaticQrCode', () => {
     expect('args' in prepared && prepared.args.static).toBe(true);
   });
 
+  it('reads the words in any case, treats null as not sent, and refuses anything else', () => {
+    expect(prepareStaticQrCode({ type: 'text', static: ' True ', text: 'x' })).toEqual({
+      args: { type: 'text', static: true, text: 'x' },
+    });
+    expect(prepareStaticQrCode({ type: 'url', static: 'FALSE', url: 'https://codeqr.io' })).toEqual({
+      args: { type: 'url', static: false, url: 'https://codeqr.io' },
+    });
+    expect(prepareStaticQrCode({ type: 'url', static: null, url: 'https://codeqr.io' })).toEqual({
+      args: { type: 'url', url: 'https://codeqr.io' },
+    });
+    for (const value of ['yes', 1, 0, {}, '']) {
+      expect(prepareStaticQrCode({ type: 'text', static: value, text: 'x' })).toEqual({
+        error: 'static must be true or false.',
+      });
+    }
+  });
+
   it.each(WIFI_SECURED_ENCRYPTIONS)('accepts a static Wi-Fi code on %s with a password', (encryption) => {
     const args = wifi({ encryption, password: 'welcome2026' });
     expect(prepareStaticQrCode(args)).toEqual({ args });

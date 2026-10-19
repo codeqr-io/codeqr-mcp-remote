@@ -12,10 +12,19 @@ export const STATIC_TYPES_IN_WORDS = `${STATIC_QRCODE_TYPES.slice(0, -1).join(',
 const VCARD_ENCODED_ALONE = ['name', 'surname', 'phone', 'email', 'website', 'address'];
 
 // A client whose copy of this tool predates `static` sends it as the string it
-// was given, and the API's schema takes only a boolean, so the string is read
-// here and forwarded as one.
+// was given, and the API's schema takes only a boolean, so "true" and "false"
+// are read here and forwarded as booleans. Anything else is not a yes or a no.
+function staticFlag(value: unknown): boolean | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean') return value;
+  const word = typeof value === 'string' ? value.trim().toLowerCase() : undefined;
+  if (word === 'true') return true;
+  if (word === 'false') return false;
+  return null;
+}
+
 export function asksForStatic(args: Record<string, unknown>): boolean {
-  return args.static === true || args.static === 'true';
+  return staticFlag(args.static) === true;
 }
 
 /**
@@ -27,7 +36,12 @@ export function asksForStatic(args: Record<string, unknown>): boolean {
 export function prepareStaticQrCode(
   args: Record<string, unknown>,
 ): { args: Record<string, unknown> } | { error: string } {
-  if (!asksForStatic(args)) return { args: args.static === 'false' ? { ...args, static: false } : args };
+  const flag = staticFlag(args.static);
+  if (flag === null) return { error: 'static must be true or false.' };
+  if (flag !== true) {
+    const { static: _sent, ...rest } = args;
+    return { args: flag === false ? { ...rest, static: false } : rest };
+  }
 
   const staticArgs = { ...args, static: true };
   const type = args.type ?? DEFAULT_QRCODE_TYPE;

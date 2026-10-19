@@ -11,7 +11,9 @@ export const STATIC_TYPES_IN_WORDS = `${STATIC_QRCODE_TYPES.slice(0, -1).join(',
 // on their own they would print an empty card.
 const VCARD_ENCODED_ALONE = ['name', 'surname', 'phone', 'email', 'website', 'address'];
 
-/** The API also takes the strings, so a model sending "true" still makes a static code. */
+// A client whose copy of this tool predates `static` sends it as the string it
+// was given, and the API's schema takes only a boolean, so the string is read
+// here and forwarded as one.
 export function asksForStatic(args: Record<string, unknown>): boolean {
   return args.static === true || args.static === 'true';
 }
@@ -25,8 +27,9 @@ export function asksForStatic(args: Record<string, unknown>): boolean {
 export function prepareStaticQrCode(
   args: Record<string, unknown>,
 ): { args: Record<string, unknown> } | { error: string } {
-  if (!asksForStatic(args)) return { args };
+  if (!asksForStatic(args)) return { args: args.static === 'false' ? { ...args, static: false } : args };
 
+  const staticArgs = { ...args, static: true };
   const type = args.type ?? DEFAULT_QRCODE_TYPE;
   if (!(STATIC_QRCODE_TYPES as readonly unknown[]).includes(type)) {
     return {
@@ -42,12 +45,12 @@ export function prepareStaticQrCode(
       };
     }
   }
-  if (type !== 'wifi') return { args };
+  if (type !== 'wifi') return { args: staticArgs };
 
   const wifi = (typeof args.wifi === 'object' && args.wifi !== null ? args.wifi : {}) as Record<string, unknown>;
   const { encryption, password } = wifi;
   if (encryption === WIFI_OPEN_NETWORK) {
-    return { args: { ...args, wifi: { ...wifi, password: typeof password === 'string' ? password : '' } } };
+    return { args: { ...staticArgs, wifi: { ...wifi, password: typeof password === 'string' ? password : '' } } };
   }
   if (typeof encryption !== 'string' || !(WIFI_SECURED_ENCRYPTIONS as readonly string[]).includes(encryption)) {
     return {
@@ -57,5 +60,5 @@ export function prepareStaticQrCode(
   if (typeof password !== 'string' || !password) {
     return { error: `A static Wi-Fi code on a ${encryption} network needs wifi.password. Ask the person for it.` };
   }
-  return { args };
+  return { args: staticArgs };
 }

@@ -14,20 +14,25 @@
 
 import type { Response } from 'express';
 import { CODEQR_LOGO_DATA_URI } from './codeqr-logo.js';
+import { translate, type Locale, type MessageKey } from './i18n/index.js';
 import { findVerifiedClient } from './verified-clients.js';
 
-// Same wording as OAUTH_SCOPE_DESCRIPTIONS in the main repo, so both screens
-// describe the access the same way.
-const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  'links.read': 'Read access to your links',
-  'links.write': 'Read and write access to your links',
-  'qrcodes.read': 'Read access to your QR Codes',
-  'qrcodes.write': 'Read and write access to your QR Codes',
-  'analytics.read': 'Read access to your analytics and events',
-  'domains.read': 'Read access to your domains',
-  'tags.read': 'Read access to your tags',
-  'tags.write': 'Read and write access to your tags',
-  'user.read': 'Read your name, email, and profile picture',
+export const PRIVACY_URL = 'https://codeqr.io/privacy';
+export const TERMS_URL = 'https://codeqr.io/terms';
+
+/** Always listed: CodeQR grants it with every authorization. */
+export const IMPLICIT_SCOPE = 'user.read';
+
+export const SCOPE_MESSAGES: Readonly<Record<string, MessageKey>> = {
+  'links.read': 'consent.scope.linksRead',
+  'links.write': 'consent.scope.linksWrite',
+  'qrcodes.read': 'consent.scope.qrcodesRead',
+  'qrcodes.write': 'consent.scope.qrcodesWrite',
+  'analytics.read': 'consent.scope.analyticsRead',
+  'domains.read': 'consent.scope.domainsRead',
+  'tags.read': 'consent.scope.tagsRead',
+  'tags.write': 'consent.scope.tagsWrite',
+  'user.read': 'consent.scope.userRead',
 };
 
 // Bidi overrides let a name like "Claude‮moc.evil" render as something else.
@@ -49,6 +54,7 @@ export interface ConsentPageParams {
   clientName: string;
   redirectUri: string;
   scopes: readonly string[];
+  locale: Locale;
   /** Echoed back as hidden inputs so the form submission can be re-validated. */
   fields: Record<string, string | undefined>;
 }
@@ -70,7 +76,15 @@ export function sendConsentPage(res: Response, params: ConsentPageParams): void 
     .send(renderConsentPage(params));
 }
 
-export function renderConsentPage({ clientName, redirectUri, scopes, fields }: ConsentPageParams): string {
+export function renderConsentPage({ clientName, redirectUri, scopes, locale, fields }: ConsentPageParams): string {
+  // Message text is markup; only the values put into it need escaping.
+  const t = (key: MessageKey, values: Record<string, string> = {}) =>
+    translate(
+      locale,
+      key,
+      Object.fromEntries(Object.entries(values).map(([name, value]) => [name, escapeHtml(value)])),
+    );
+
   const verified = findVerifiedClient(redirectUri);
   const displayName = verified?.name ?? clientName.replace(INVISIBLE_FORMATTING, '').trim();
   const name = escapeHtml(displayName);
@@ -82,30 +96,34 @@ export function renderConsentPage({ clientName, redirectUri, scopes, fields }: C
     : `<div class="avatar" aria-hidden="true">${initial}</div>`;
 
   const trust = verified
-    ? `<div class="badge verified">${VERIFIED_ICON}<span>Verified by CodeQR.io</span></div>`
-    : `<div class="badge">${WARNING_ICON}<span>CodeQR.io has not verified this application. Continue only if you started this connection yourself; if someone sent you this link, refuse.</span></div>`;
+    ? `<div class="badge verified">${VERIFIED_ICON}<span>${t('consent.verified')}</span></div>`
+    : `<div class="badge">${WARNING_ICON}<span>${t('consent.unverified')}</span></div>`;
 
   const hiddenInputs = Object.entries(fields)
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
     .join('\n        ');
 
-  const scopeItems = consolidateScopes([...scopes, 'user.read'])
+  const scopeItems = consolidateScopes([...scopes, IMPLICIT_SCOPE])
     .map((scope) => {
-      const description = escapeHtml(SCOPE_DESCRIPTIONS[scope] ?? scope)
-        .replace('Write', '<strong>Write</strong>')
-        .replace('Read', '<strong>Read</strong>');
-      return `<li>${CHECK_ICON}<span>${description}</span></li>`;
+      const message = Object.hasOwn(SCOPE_MESSAGES, scope) ? SCOPE_MESSAGES[scope] : undefined;
+      return `<li>${CHECK_ICON}<span>${message ? t(message) : escapeHtml(scope)}</span></li>`;
     })
     .join('\n          ');
 
+  // Only a verified client's name is repeated here: a self-declared one is
+  // already flagged above, and saying "you return to <it>" would vouch for it.
+  const returnStep = verified
+    ? t('consent.nextReturnVerified', { client: verified.name })
+    : t('consent.nextReturnGeneric');
+
   return `<!doctype html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Authorize API Access | CodeQR</title>
+  <title>${t('consent.pageTitle')}</title>
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
@@ -129,19 +147,24 @@ export function renderConsentPage({ clientName, redirectUri, scopes, fields }: C
     .target { margin: 0; font-size: 1.125rem; font-weight: 700; overflow-wrap: anywhere; }
     .note { margin: -.5rem 0 0; color: #6b7280; font-size: .875rem; line-height: 1.5rem; }
     .uri { margin: -.5rem 0 0; color: #6b7280; font: .75rem/1rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
-    ul { margin: 0; padding: 0; list-style: none; }
+    ul, ol { margin: 0; padding: 0; list-style: none; }
     li { display: flex; align-items: center; gap: .5rem; }
     li + li { margin-top: .25rem; }
     li strong { font-weight: 500; }
     .check { flex-shrink: 0; width: 16px; height: 16px; color: #22c55e; }
+    .steps { counter-reset: step; }
+    .steps li { align-items: flex-start; counter-increment: step; color: #374151; font-size: .875rem; line-height: 1.5rem; }
+    .steps li::before { content: counter(step); flex-shrink: 0; display: flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; margin-top: .125rem; border-radius: 9999px; background: #f3f4f6; color: #4b5563; font-size: .75rem; font-weight: 600; line-height: 1; }
     .footer { padding: 1.5rem .5rem; background: #fff; border-top: 1px solid #e5e7eb; }
-    .hint { margin: 0; color: #6b7280; font-size: .875rem; line-height: 1.5rem; }
-    .actions { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1rem; }
+    .actions { display: flex; justify-content: space-between; gap: 1rem; }
     button { display: flex; align-items: center; justify-content: center; height: 2.5rem; padding: 0 1rem; border: 1px solid; border-radius: .375rem; font: inherit; font-size: .875rem; line-height: 1.5rem; white-space: nowrap; cursor: pointer; transition: all .15s; }
     .secondary { border-color: #e5e7eb; background: #fff; color: #111827; }
     .secondary:hover { background: #f9fafb; }
     .primary { border-color: #000; background: #000; color: #fff; }
     .primary:hover { background: #1f2937; box-shadow: 0 0 0 4px #e5e7eb; }
+    .legal { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem 1rem; margin: 1.25rem 0 0; color: #6b7280; font-size: .75rem; line-height: 1rem; }
+    .legal a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+    .legal a:hover { color: #111827; }
     @media (min-width: 640px) {
       body { padding: 48px 24px; }
       .card { border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / .1), 0 8px 10px -6px rgb(0 0 0 / .1); }
@@ -159,33 +182,45 @@ export function renderConsentPage({ clientName, redirectUri, scopes, fields }: C
         ${ARROW_LEFT_RIGHT_ICON}
         <img class="logo" src="${CODEQR_LOGO_DATA_URI}" alt="CodeQR">
       </div>
-      <p class="request"><b>${name}</b> is requesting API access for a project on CodeQR.io.</p>
+      <p class="request">${t('consent.request', { client: displayName })}</p>
       ${trust}
     </div>
 
     <div class="section">
-      <span class="label">Access will be sent to:</span>
+      <span class="label">${t('consent.destinationLabel')}</span>
       <p class="target">${escapeHtml(destination.target)}</p>
-      ${destination.note ? `<p class="note">${escapeHtml(destination.note)}</p>` : ''}
+      ${destination.note ? `<p class="note">${t(destination.note)}</p>` : ''}
       <p class="uri">${escapeHtml(redirectUri)}</p>
     </div>
 
     <div class="section">
-      <span class="label">Grant permissions:</span>
+      <span class="label">${t('consent.permissionsLabel')}</span>
       <ul>
           ${scopeItems}
       </ul>
     </div>
 
+    <div class="section">
+      <span class="label">${t('consent.nextTitle')}</span>
+      <ol class="steps">
+        <li><span>${t('consent.nextSignIn')}</span></li>
+        <li><span>${t('consent.nextProject')}</span></li>
+        <li><span>${returnStep}</span></li>
+      </ol>
+    </div>
+
     <div class="footer">
-      <p class="hint">You will choose which project to grant access to on the next screen.</p>
       <form method="post" action="authorize">
         ${hiddenInputs}
         <div class="actions">
-          <button type="submit" name="decision" value="deny" class="secondary">Refuse</button>
-          <button type="submit" name="decision" value="approve" class="primary">Continue</button>
+          <button type="submit" name="decision" value="deny" class="secondary">${t('consent.refuse')}</button>
+          <button type="submit" name="decision" value="approve" class="primary">${t('consent.continue')}</button>
         </div>
       </form>
+      <p class="legal">
+        <a href="${PRIVACY_URL}" target="_blank" rel="noopener noreferrer">${t('consent.privacy')}</a>
+        <a href="${TERMS_URL}" target="_blank" rel="noopener noreferrer">${t('consent.terms')}</a>
+      </p>
     </div>
   </main>
 </body>
@@ -210,21 +245,16 @@ function consolidateScopes(scopes: readonly string[]): string[] {
   return Array.from(consolidated);
 }
 
-function describeDestination(redirectUri: string): { target: string; note?: string } {
+function describeDestination(redirectUri: string): { target: string; note?: MessageKey } {
   const url = new URL(redirectUri);
 
   if (url.protocol === 'https:') return { target: url.host };
 
-  if (url.protocol === 'http:') {
-    return {
-      target: url.host,
-      note: 'This address is on your own computer, so any program running on it can receive the access.',
-    };
-  }
+  if (url.protocol === 'http:') return { target: url.host, note: 'consent.destinationLoopback' };
 
   return {
     target: url.host ? `${url.protocol}//${url.host}` : url.protocol,
-    note: 'This address opens an app installed on this device.',
+    note: 'consent.destinationApp',
   };
 }
 

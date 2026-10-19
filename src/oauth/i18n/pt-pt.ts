@@ -1,0 +1,32 @@
+import type { Messages } from './en.js';
+
+export const ptPt: Messages = {
+  'consent.pageTitle': 'Autorizar o acesso à API | CodeQR',
+  'consent.request': '<b>{client}</b> está a pedir acesso à API de um projeto na CodeQR.io.',
+  'consent.verified': 'Verificada pela CodeQR.io',
+  'consent.unverified':
+    'A CodeQR.io não verificou esta aplicação. Continue apenas se tiver sido o próprio a iniciar esta ligação; se alguém lhe enviou este link, recuse.',
+  'consent.destinationLabel': 'O acesso será enviado para:',
+  'consent.destinationLoopback':
+    'Este endereço está no seu próprio computador, pelo que qualquer programa em execução no mesmo pode receber o acesso.',
+  'consent.destinationApp': 'Este endereço abre uma aplicação instalada neste dispositivo.',
+  'consent.permissionsLabel': 'Conceder permissões:',
+  'consent.scope.linksRead': 'Acesso de <strong>leitura</strong> aos seus links',
+  'consent.scope.linksWrite': 'Acesso de <strong>leitura e escrita</strong> aos seus links',
+  'consent.scope.qrcodesRead': 'Acesso de <strong>leitura</strong> aos seus códigos QR',
+  'consent.scope.qrcodesWrite': 'Acesso de <strong>leitura e escrita</strong> aos seus códigos QR',
+  'consent.scope.analyticsRead': 'Acesso de <strong>leitura</strong> às suas análises e eventos',
+  'consent.scope.domainsRead': 'Acesso de <strong>leitura</strong> aos seus domínios',
+  'consent.scope.tagsRead': 'Acesso de <strong>leitura</strong> às suas etiquetas',
+  'consent.scope.tagsWrite': 'Acesso de <strong>leitura e escrita</strong> às suas etiquetas',
+  'consent.scope.userRead': '<strong>Ler</strong> o seu nome, e-mail e fotografia de perfil',
+  'consent.nextTitle': 'O que acontece a seguir',
+  'consent.nextSignIn': 'Inicie sessão na CodeQR ou crie uma conta gratuita.',
+  'consent.nextProject': 'Escolha o projeto a ligar ou crie um novo.',
+  'consent.nextReturnVerified': 'Regressa ao {client}.',
+  'consent.nextReturnGeneric': 'Regressa à app onde começou.',
+  'consent.refuse': 'Recusar',
+  'consent.continue': 'Continuar',
+  'consent.privacy': 'Política de Privacidade',
+  'consent.terms': 'Termos de Serviço',
+};

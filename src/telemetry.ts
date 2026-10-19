@@ -31,8 +31,8 @@ export interface EventFields {
   outcome?: 'ok' | 'error';
   /** Machine-readable cause of an `error` outcome, or of a rejection. */
   reason?: string;
-  /** What the user did on the consent screen. */
-  decision?: 'shown' | 'approve' | 'deny';
+  /** What the user did on the consent screen; `remembered` when an earlier approval skipped it. */
+  decision?: 'shown' | 'approve' | 'deny' | 'remembered';
   /** The client_id this server issued at registration. */
   clientId?: string;
   /** Display name: the verified one when the redirect URI is known, else the self-declared one. */

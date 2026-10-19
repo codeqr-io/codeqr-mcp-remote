@@ -81,6 +81,16 @@ export interface PendingAuthorization {
   scope: string;
   /** The consent cookie of the browser that approved; see browser-binding.ts. */
   browserBinding: string;
+  /** Set on an explicit approval of a verified client; see remembered-consent.ts. */
+  rememberOnSuccess?: boolean;
+  expiresAt: number;
+}
+
+/** An approval of a verified client on the consent screen; see remembered-consent.ts. */
+export interface RememberedConsent {
+  clientId: string;
+  redirectUri: string;
+  scopeVersion: string;
   expiresAt: number;
 }
 
@@ -111,6 +121,7 @@ const KEY_CLIENT = 'codeqr:as:mcp:oauth:client:';
 const KEY_PENDING = 'codeqr:as:mcp:oauth:pending:';
 const KEY_REFRESH_LOCK = 'codeqr:as:mcp:oauth:refresh-lock:';
 const KEY_REGISTRATION_RATE = 'codeqr:as:mcp:oauth:register-rate:';
+const KEY_REMEMBERED_CONSENT = 'codeqr:as:mcp:oauth:remembered-consent:';
 
 // Authorization codes expire after 10 minutes (seconds for Redis EX).
 const AUTH_CODE_TTL_SEC = 10 * 60;
@@ -119,6 +130,10 @@ const AUTH_CODE_TTL_SEC = 10 * 60;
 // dropped. Generous because this window includes logging in and, for a new
 // visitor, creating a project.
 export const PENDING_TTL_SEC = 30 * 60;
+
+// Counted from the approval and never extended by a skipped screen, so someone
+// who keeps reconnecting still sees the screen once per period.
+export const REMEMBERED_CONSENT_TTL_SEC = 30 * 24 * 60 * 60;
 
 // A registration nobody ever completes an authorization with is dropped after
 // this long, which bounds what anonymous registration can pile up in Redis.
@@ -145,6 +160,7 @@ const pendingAuthorizations = new Map<string, PendingAuthorization>();
 const refreshLocks = new Map<string, number>();
 const unusedClientDeadlines = new Map<string, number>();
 const registrationCounts = new Map<string, { window: number; count: number }>();
+const rememberedConsents = new Map<string, RememberedConsent>();
 
 // TTL cleanup for in-memory mode (every 5 minutes).
 // unref'd so this timer never by itself keeps the process alive.
@@ -158,6 +174,9 @@ const cleanupTimer = setInterval(() => {
   }
   for (const [key, pending] of pendingAuthorizations) {
     if (pending.expiresAt < now) pendingAuthorizations.delete(key);
+  }
+  for (const [key, remembered] of rememberedConsents) {
+    if (remembered.expiresAt < now) rememberedConsents.delete(key);
   }
   for (const [key, expiresAt] of refreshLocks) {
     if (expiresAt < now) refreshLocks.delete(key);
@@ -481,6 +500,7 @@ export async function createPendingAuthorization(params: {
   clientState?: string;
   scope: string;
   browserBinding: string;
+  rememberOnSuccess?: boolean;
 }): Promise<string> {
   const state = nanoid(48);
   const entry: PendingAuthorization = {
@@ -516,6 +536,54 @@ export async function consumePendingAuthorization(
   pendingAuthorizations.delete(state);
   if (entry.expiresAt < Date.now()) return null;
   return entry;
+}
+
+// ── Remembered consent ────────────────────────────────────────────────────────
+
+export async function saveRememberedConsent(
+  id: string,
+  params: Omit<RememberedConsent, 'expiresAt'>,
+): Promise<void> {
+  const entry: RememberedConsent = {
+    ...params,
+    expiresAt: Date.now() + REMEMBERED_CONSENT_TTL_SEC * 1000,
+  };
+
+  const redis = getRedis();
+  if (redis) {
+    await redis.set(`${KEY_REMEMBERED_CONSENT}${id}`, JSON.stringify(entry), { ex: REMEMBERED_CONSENT_TTL_SEC });
+    return;
+  }
+
+  rememberedConsents.set(id, entry);
+}
+
+export async function getRememberedConsent(id: string): Promise<RememberedConsent | null> {
+  const redis = getRedis();
+  if (redis) {
+    const raw = await redis.get(`${KEY_REMEMBERED_CONSENT}${id}`);
+    if (raw == null) return null;
+    const entry = decode<RememberedConsent>(raw);
+    return entry.expiresAt < Date.now() ? null : entry;
+  }
+
+  const entry = rememberedConsents.get(id) ?? null;
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    rememberedConsents.delete(id);
+    return null;
+  }
+  return entry;
+}
+
+export async function forgetRememberedConsent(id: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    await redis.del(`${KEY_REMEMBERED_CONSENT}${id}`);
+    return;
+  }
+
+  rememberedConsents.delete(id);
 }
 
 // ── Refresh lock ──────────────────────────────────────────────────────────────

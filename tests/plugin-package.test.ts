@@ -127,6 +127,23 @@ describe('plugin package review cases', () => {
     }
   });
 
+  it('asks for a static Wi-Fi code explicitly and expects a static one', () => {
+    const wifi = positive.filter((c: { prompt: string }) => /wi-?fi/i.test(c.prompt));
+    expect(wifi.length).toBeGreaterThan(0);
+    for (const c of wifi) {
+      expect(c.prompt).toMatch(/\bstatic\b/i);
+      expect(c.expected_behavior).toMatch(/\bstatic\b/i);
+    }
+  });
+
+  it('does not promise lead or sale analytics', () => {
+    const translations = Object.values<{ description: string }>(openai.publication.translations);
+    expect(translations.length).toBeGreaterThan(0);
+    expect(iface.longDescription).not.toMatch(/\bsales?\b|\blead,|\bleads and\b/i);
+    const translatedTerms = /\bleads\b|лидов|продаж|ventas|ventes|vendite|vendas|Verkauf|売上|판매|销售/i;
+    for (const t of translations) expect(t.description).not.toMatch(translatedTerms);
+  });
+
   it('leaves out fields the dashboard owns', () => {
     expect(openai.review.demo_recording_url).toBeUndefined();
     expect(openai.review.commerce).toBe(false);

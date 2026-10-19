@@ -1104,7 +1104,7 @@ describe('GET /oauth/callback on mobile', () => {
     );
 
     expect(response.text).toContain('<html lang="pt-br">');
-    expect(response.text).toContain('Conectado ao CodeQR. Toque para voltar ao seu app.');
+    expect(response.text).toContain('Conectado à CodeQR. Toque para voltar ao seu app.');
   });
 
   it('keeps the remembered-consent cookie behaviour of the redirect', async () => {

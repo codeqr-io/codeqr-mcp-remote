@@ -9,3 +9,6 @@ dist/
 *.key
 .DS_Store
 web/dev/out/
+
+# Built plugin package
+codeqr-plugin.zip

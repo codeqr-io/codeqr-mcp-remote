@@ -29,4 +29,10 @@ export const de: Messages = {
   'consent.continue': 'Weiter',
   'consent.privacy': 'Datenschutzerklärung',
   'consent.terms': 'Nutzungsbedingungen',
+  'handoff.pageTitle': 'Zurück zur App | CodeQR',
+  'handoff.successVerified': 'Mit CodeQR verbunden. Tippen Sie, um zu {client} zurückzukehren.',
+  'handoff.successGeneric': 'Mit CodeQR verbunden. Tippen Sie, um zu Ihrer App zurückzukehren.',
+  'handoff.errorVerified': 'Die Verbindung wurde nicht abgeschlossen. Tippen Sie, um zu {client} zurückzukehren.',
+  'handoff.errorGeneric': 'Die Verbindung wurde nicht abgeschlossen. Tippen Sie, um zu Ihrer App zurückzukehren.',
+  'handoff.button': 'Zurück',
 };

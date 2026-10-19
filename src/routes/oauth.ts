@@ -45,6 +45,8 @@ import { verifyCodeChallenge } from '../oauth/pkce.js';
 import { buildAuthorizeUrl, exchangeCodeForCredentials } from '../oauth/codeqr-oauth.js';
 import { issueBinding, readBinding, sameBinding } from '../oauth/browser-binding.js';
 import { sendConsentPage } from '../oauth/consent-page.js';
+import { sendHandoffPage } from '../oauth/handoff-page.js';
+import { isMobileUserAgent } from '../oauth/mobile.js';
 import { resolveLocale } from '../oauth/i18n/index.js';
 import { canRemember, forgetApproval, isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
@@ -270,8 +272,10 @@ export function createOAuthRouter(): Router {
         reason: `codeqr_${error}`,
         clientId: pending.clientId,
         ...callbackTrace(req),
+        ...handoffTrace(req),
       });
-      redirectWithError(
+      redirectToClientWithError(
+        req,
         res,
         pending.redirectUri,
         error,
@@ -288,8 +292,10 @@ export function createOAuthRouter(): Router {
         reason: 'no_code',
         clientId: pending.clientId,
         ...callbackTrace(req),
+        ...handoffTrace(req),
       });
-      redirectWithError(
+      redirectToClientWithError(
+        req,
         res,
         pending.redirectUri,
         'invalid_request',
@@ -311,9 +317,10 @@ export function createOAuthRouter(): Router {
         reason: 'exchange_failed',
         clientId: pending.clientId,
         ...callbackTrace(req),
+        ...handoffTrace(req),
       });
       const message = err instanceof Error ? err.message : 'Token exchange with CodeQR failed';
-      redirectWithError(res, pending.redirectUri, 'server_error', message, pending.clientState);
+      redirectToClientWithError(req, res, pending.redirectUri, 'server_error', message, pending.clientState);
       return;
     }
 
@@ -334,6 +341,7 @@ export function createOAuthRouter(): Router {
       redirectHost: redirectHost(pending.redirectUri),
       keyHashPrefix: keyHashPrefix(codeqr.accessToken),
       ...callbackTrace(req),
+      ...handoffTrace(req),
     });
 
     // A re-entry that skipped the screen is not marked, so skipping never
@@ -344,7 +352,7 @@ export function createOAuthRouter(): Router {
     redirectUrl.searchParams.set('code', authCode);
     if (pending.clientState) redirectUrl.searchParams.set('state', pending.clientState);
 
-    res.redirect(302, redirectUrl.toString());
+    redirectToClient(req, res, redirectUrl.toString(), { kind: 'success', redirectUri: pending.redirectUri });
   });
 
   // ── Token Endpoint ─────────────────────────────────────────────────────────
@@ -636,6 +644,14 @@ function clientAddress(req: Request): string {
  * Only ever called with a redirect_uri that has already been matched against
  * the client's registration.
  */
+function errorRedirectUrl(redirectUri: string, error: string, description: string, state?: string): string {
+  const url = new URL(redirectUri);
+  url.searchParams.set('error', error);
+  url.searchParams.set('error_description', description);
+  if (state) url.searchParams.set('state', state);
+  return url.toString();
+}
+
 function redirectWithError(
   res: Response,
   redirectUri: string,
@@ -644,10 +660,39 @@ function redirectWithError(
   state?: string,
   status: 302 | 303 = 302,
 ): void {
-  const url = new URL(redirectUri);
-  url.searchParams.set('error', error);
-  url.searchParams.set('error_description', description);
-  if (state) url.searchParams.set('state', state);
+  res.redirect(status, errorRedirectUrl(redirectUri, error, description, state));
+}
 
-  res.redirect(status, url.toString());
+function redirectToClientWithError(
+  req: Request,
+  res: Response,
+  redirectUri: string,
+  error: string,
+  description: string,
+  state?: string,
+): void {
+  redirectToClient(req, res, errorRedirectUrl(redirectUri, error, description, state), {
+    kind: 'error',
+    redirectUri,
+  });
+}
+
+function handoffTrace(req: Request): Pick<EventFields, 'mobileHandoff'> {
+  return isMobileUserAgent(req.get('user-agent')) ? { mobileHandoff: true } : {};
+}
+
+// A tap, not a redirect: on Android the redirect chain ends in the browser and
+// the client app never reopens, while a link the user taps is handed to it.
+function redirectToClient(
+  req: Request,
+  res: Response,
+  url: string,
+  { kind, redirectUri }: { kind: 'success' | 'error'; redirectUri: string },
+): void {
+  if (!isMobileUserAgent(req.get('user-agent'))) {
+    res.redirect(302, url);
+    return;
+  }
+
+  sendHandoffPage(res, { url, redirectUri, kind, locale: resolveLocale(req) });
 }

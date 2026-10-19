@@ -29,4 +29,10 @@ export const fr: Messages = {
   'consent.continue': 'Continuer',
   'consent.privacy': 'Politique de confidentialité',
   'consent.terms': "Conditions d'utilisation",
+  'handoff.pageTitle': 'Retour à votre app | CodeQR',
+  'handoff.successVerified': 'Connecté à CodeQR. Touchez pour revenir sur {client}.',
+  'handoff.successGeneric': 'Connecté à CodeQR. Touchez pour revenir sur votre app.',
+  'handoff.errorVerified': 'La connexion n’a pas abouti. Touchez pour revenir sur {client}.',
+  'handoff.errorGeneric': 'La connexion n’a pas abouti. Touchez pour revenir sur votre app.',
+  'handoff.button': 'Retour',
 };

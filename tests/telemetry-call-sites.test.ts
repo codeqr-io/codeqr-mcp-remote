@@ -879,6 +879,14 @@ describe('MCP funnel fields', () => {
     expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
   });
 
+  it.each(['get', 'delete'] as const)('%s / answers 405 too, since the origin serves MCP, and logs nothing', async (method) => {
+    const res = await request(indexApp)[method]('/').set('User-Agent', 'crawler/1');
+
+    expect(res.status).toBe(405);
+    expect(res.headers.allow).toBe('POST');
+    expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
+  });
+
   it('a rejected initialize logs mcp.rejected and no mcp.initialize', async () => {
     const token = await bearer();
 

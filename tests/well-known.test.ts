@@ -43,6 +43,17 @@ describe('401 discovery pointer', () => {
     expect(metadata.body.resource).toBe(`${ORIGIN}/mcp`);
   });
 
+  it('treats /mcp/ and /MCP, which Express routes to the same handler, as /mcp', async () => {
+    for (const path of ['/mcp/', '/MCP']) {
+      const res = await asPublicHost(request(app).post(path).send({}));
+
+      expect(res.status, path).toBe(401);
+      expect(resourceMetadataOf(res.headers['www-authenticate']), path).toBe(
+        `${ORIGIN}/.well-known/oauth-protected-resource/mcp`,
+      );
+    }
+  });
+
   it('sends a client of the bare origin to the root document', async () => {
     const res = await asPublicHost(request(app).post('/').send({}));
 

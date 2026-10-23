@@ -18,7 +18,8 @@ const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource';
  * path-suffixed location and the root one stays where it was.
  */
 function resourcePath(req: Request): string {
-  return req.path === MCP_PATH ? MCP_PATH : '';
+  // Express routes `/mcp/` and `/MCP` to the same handler as `/mcp`.
+  return req.path.replace(/\/+$/, '').toLowerCase() === MCP_PATH ? MCP_PATH : '';
 }
 
 /** Where the 401 sends a client to discover how to authenticate for this request's URL. */

@@ -75,6 +75,10 @@ const MCP_METHOD_NOT_ALLOWED_BODY = {
   docs: NOT_FOUND_BODY.docs,
 };
 
+const methodNotAllowed = (res: Response) => {
+  res.status(405).set('Allow', 'POST').json(MCP_METHOD_NOT_ALLOWED_BODY);
+};
+
 const mcpMethodNotAllowed = (req: Request, res: Response) => {
   // Express routes HEAD through app.get; a probe is not a session attempt.
   if (req.method !== 'HEAD') {
@@ -85,11 +89,15 @@ const mcpMethodNotAllowed = (req: Request, res: Response) => {
       userAgent: req.headers['user-agent'],
     });
   }
-  res.status(405).set('Allow', 'POST').json(MCP_METHOD_NOT_ALLOWED_BODY);
+  methodNotAllowed(res);
 };
 
 app.get('/mcp', mcpMethodNotAllowed);
 app.delete('/mcp', mcpMethodNotAllowed);
+// The origin serves MCP too, so it answers the same way; unlogged, because
+// GET / is mostly crawlers and uptime probes rather than MCP clients.
+app.get('/', (_req, res) => methodNotAllowed(res));
+app.delete('/', (_req, res) => methodNotAllowed(res));
 
 app.use((_req, res) => {
   res.status(404).json(NOT_FOUND_BODY);

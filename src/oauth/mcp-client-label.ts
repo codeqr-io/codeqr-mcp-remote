@@ -27,14 +27,18 @@ const BY_SCHEME: Record<string, string> = {
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const LOOPBACK_CLIENT = 'local';
 
+// Claude Code registers as `Claude Code (<server name>)`.
+const CLAUDE_CODE_NAME = /^Claude Code \(.+\)$/;
+const CLAUDE_CODE_CLIENT = 'claude-code';
+
 export const UNKNOWN_MCP_CLIENT = 'other';
 
 /** Every value `mcpClientLabel` can return besides a verified client's id. */
 export const MCP_CLIENT_LABELS = [
-  ...new Set([...Object.values(BY_HOST), ...Object.values(BY_SCHEME), LOOPBACK_CLIENT, UNKNOWN_MCP_CLIENT]),
+  ...new Set([...Object.values(BY_HOST), ...Object.values(BY_SCHEME), LOOPBACK_CLIENT, CLAUDE_CODE_CLIENT, UNKNOWN_MCP_CLIENT]),
 ];
 
-export function mcpClientLabel(redirectUri: string): string {
+export function mcpClientLabel(redirectUri: string, clientName?: string): string {
   const verified = findVerifiedClient(redirectUri);
   if (verified) return verified.id;
 
@@ -46,6 +50,10 @@ export function mcpClientLabel(redirectUri: string): string {
   }
 
   if (Object.hasOwn(BY_SCHEME, url.protocol)) return BY_SCHEME[url.protocol];
-  if (LOOPBACK_HOSTS.has(url.hostname)) return LOOPBACK_CLIENT;
+  if (LOOPBACK_HOSTS.has(url.hostname)) {
+    // The name is self-declared, so it only sorts loopback clients for
+    // attribution; it is never shown and never makes a client verified.
+    return clientName !== undefined && CLAUDE_CODE_NAME.test(clientName) ? CLAUDE_CODE_CLIENT : LOOPBACK_CLIENT;
+  }
   return Object.hasOwn(BY_HOST, url.hostname) ? BY_HOST[url.hostname] : UNKNOWN_MCP_CLIENT;
 }

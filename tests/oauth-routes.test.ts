@@ -305,11 +305,67 @@ describe('GET /oauth/authorize', () => {
     const verified = await approveWith('https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'Anything');
     const claude = await approveWith('https://claude.ai/api/mcp/auth_callback', 'Claude');
     const unknown = await approveWith('https://attacker.test/callback', 'ChatGPT');
+    const claudeCode = await approveWith('http://localhost:51234/callback', 'Claude Code (codeqr)');
+    const otherLoopback = await approveWith('http://localhost:51234/callback', 'Codex');
 
     expect(verified.get('mcp_client')).toBe('chatgpt');
     expect(claude.get('mcp_client')).toBe('claude');
     expect(unknown.get('mcp_client')).toBe('other');
+    expect(claudeCode.get('mcp_client')).toBe('claude-code');
+    expect(otherLoopback.get('mcp_client')).toBe('local');
     expect(unknown.get('state')).toBeTruthy();
+  });
+
+  describe('on a platform callback, which every connector on the platform shares', () => {
+    const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
+    const CHATGPT_CALLBACK = 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ';
+    const SERVER = 'https://mcp.example.test';
+
+    async function visit(redirectUri: string, resource?: string) {
+      const app = makeApp();
+      const { body } = await register(app, { client_name: 'Claude', redirect_uris: [redirectUri] });
+      return request(app)
+        .get('/oauth/authorize')
+        .set('X-Forwarded-Proto', 'https')
+        .set('X-Forwarded-Host', 'mcp.example.test')
+        .query({
+          ...authorizeParams(body.client_id),
+          redirect_uri: redirectUri,
+          ...(resource !== undefined && { resource }),
+        });
+    }
+
+    it.each(['https://evil.test/mcp', `${SERVER}.evil.test/mcp`, `${SERVER}/other`, `${SERVER}/mcp?x=1`, 'not a url'])(
+      'turns away a Claude request for resource %s before the screen',
+      async (resource) => {
+        const response = await visit(CLAUDE_CALLBACK, resource);
+        const location = new URL(response.headers.location);
+
+        expect(response.status).toBe(302);
+        expect(`${location.origin}${location.pathname}`).toBe(CLAUDE_CALLBACK);
+        expect(location.searchParams.get('error')).toBe('invalid_target');
+        expect(location.searchParams.get('state')).toBe('client-state-1');
+        expect(bindingFrom(response)).toBeUndefined();
+      },
+    );
+
+    it.each([`${SERVER}/mcp`, `${SERVER}/mcp/`, `${SERVER}/MCP`, SERVER, `${SERVER}/`, undefined])(
+      'shows the Claude screen for resource %s',
+      async (resource) => {
+        const response = await visit(CLAUDE_CALLBACK, resource);
+
+        expect(response.status).toBe(200);
+        expect(response.text).toContain('<b>Claude</b>');
+        expect(bindingFrom(response)).toBeTruthy();
+      },
+    );
+
+    it('leaves the app-specific ChatGPT callback as it was, whatever resource it sends', async () => {
+      const response = await visit(CHATGPT_CALLBACK, 'https://evil.test/mcp');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('<b>ChatGPT</b>');
+    });
   });
 
   it('does not vouch for a client that only borrows a verified name', async () => {
@@ -738,6 +794,52 @@ describe('remembered consent', () => {
       scopeVersion: scopeVersion('mcp:tools'),
     });
     expect((await b.visit(paramsFor(clientId))).status).toBe(303);
+  });
+
+  describe('next to the Claude platform callback', () => {
+    const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
+
+    async function registerClaude(app: express.Express) {
+      const { body } = await register(app, { client_name: 'Claude', redirect_uris: [CLAUDE_CALLBACK] });
+      return body.client_id as string;
+    }
+
+    const claudeParams = (clientId: string) => ({ ...authorizeParams(clientId), redirect_uri: CLAUDE_CALLBACK });
+
+    it('never remembers Claude, and the ChatGPT approval this browser holds survives it', async () => {
+      const app = makeApp();
+      const chatgpt = await registerVerified(app);
+      const claude = await registerClaude(app);
+      const b = browser(app);
+
+      await connect(b, paramsFor(chatgpt));
+      const remembered = b.get(REMEMBER_COOKIE);
+      vi.mocked(store.saveRememberedConsent).mockClear();
+
+      await connect(b, claudeParams(claude));
+
+      expect(store.saveRememberedConsent).not.toHaveBeenCalled();
+      expect(b.get(REMEMBER_COOKIE)).toBe(remembered);
+      expect((await b.visit(claudeParams(claude))).status).toBe(200);
+      expect((await b.visit(paramsFor(chatgpt))).status).toBe(303);
+    });
+
+    it.each(REFUSALS)('keeps the ChatGPT approval when a Claude connection %s', async (_label, query) => {
+      const app = makeApp();
+      const chatgpt = await registerVerified(app);
+      const claude = await registerClaude(app);
+      const b = browser(app);
+
+      await connect(b, paramsFor(chatgpt));
+      const remembered = b.get(REMEMBER_COOKIE);
+
+      await b.visit(claudeParams(claude));
+      const approved = await b.decide(claudeParams(claude));
+      await b.returnFromCodeQR(approved, query);
+
+      expect(b.get(REMEMBER_COOKIE)).toBe(remembered);
+      expect((await b.visit(paramsFor(chatgpt))).status).toBe(303);
+    });
   });
 
   it.each(REFUSALS)('remembers nothing when the user continues and then %s', async (_label, query) => {

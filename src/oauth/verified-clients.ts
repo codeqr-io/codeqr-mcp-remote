@@ -19,6 +19,12 @@ export interface VerifiedClient {
   id: string;
   /** A data: URI, so the consent page still loads nothing from another origin. */
   logo?: string;
+  /**
+   * The callback belongs to the whole platform, not to CodeQR's app on it, so
+   * any connector there can bring people to this screen with it. Such a
+   * request must name this server as its `resource`, and is never remembered.
+   */
+  platformCallback?: boolean;
 }
 
 export const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
@@ -34,6 +40,10 @@ export const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
     id: 'chatgpt',
     logo: CHATGPT_LOGO_DATA_URI,
   },
+  // The one callback every hosted Claude app (web, Desktop, mobile) uses. No
+  // logo: Anthropic's trademark guidelines require prior approval to use their
+  // marks, so the screen shows the name only.
+  'https://claude.ai/api/mcp/auth_callback': { name: 'Claude', id: 'claude', platformCallback: true },
 };
 
 export function findVerifiedClient(redirectUri: string): VerifiedClient | undefined {

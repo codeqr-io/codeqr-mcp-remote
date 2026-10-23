@@ -37,9 +37,38 @@ describe('mcpClientLabel', () => {
     expect(mcpClientLabel(redirectUri)).toBe(UNKNOWN_MCP_CLIENT);
   });
 
+  it.each([
+    ['Claude Code (codeqr)', 'http://localhost:51234/callback'],
+    ['Claude Code (codeqr)', 'http://127.0.0.1:9/callback'],
+    ['Claude Code (codeqr)', 'http://[::1]:8080/callback'],
+  ])('labels %s on %s as claude-code', (clientName, redirectUri) => {
+    expect(mcpClientLabel(redirectUri, clientName)).toBe('claude-code');
+  });
+
+  it.each(['Claude Code', 'Claude Code ()', 'Codex', 'MCP Inspector', 'claude code (codeqr)', ''])(
+    'keeps loopback as local for the name %j',
+    (clientName) => {
+      expect(mcpClientLabel('http://localhost:51234/callback', clientName)).toBe('local');
+    },
+  );
+
+  it('keeps loopback as local when no name is given', () => {
+    expect(mcpClientLabel('http://localhost:51234/callback')).toBe('local');
+  });
+
+  it('never lets the name label a redirect that is not loopback', () => {
+    expect(mcpClientLabel('https://attacker.test/cb', 'Claude Code (codeqr)')).toBe(UNKNOWN_MCP_CLIENT);
+    expect(mcpClientLabel('https://chatgpt.com/connector/oauth/someoneElse', 'Claude Code (codeqr)')).toBe('chatgpt');
+  });
+
+  it('lets a verified redirect win over the name', () => {
+    expect(mcpClientLabel('https://claude.ai/api/mcp/auth_callback', 'Claude Code (codeqr)')).toBe('claude');
+  });
+
   it('only ever returns labels CodeQR will record', () => {
     const labels = [...MCP_CLIENT_LABELS, ...Object.values(VERIFIED_CLIENTS).map((c) => c.id)];
 
+    expect(MCP_CLIENT_LABELS).toContain('claude-code');
     expect(labels.length).toBeGreaterThan(Object.keys(VERIFIED_CLIENTS).length);
     for (const label of labels) expect(label).toMatch(CODEQR_MCP_CLIENT);
   });

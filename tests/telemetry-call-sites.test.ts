@@ -485,6 +485,78 @@ describe('verified client identity', () => {
     });
   });
 
+  it.each([
+    ['names this server', 'http://mcp.example.test/mcp', 'ours'],
+    ['names another server', 'https://evil.test/mcp', 'other'],
+    ['is absent', undefined, 'absent'],
+  ])('records on the shown screen whether the resource %s', async (_case, resource, check) => {
+    const app = makeApp();
+    const clientId = await registerAs(app, 'Anything', CLIENT_REDIRECT);
+    const { challenge } = pkce();
+    await request(app)
+      .get('/oauth/authorize')
+      .set('Host', 'mcp.example.test')
+      .query({ ...authorizeParams(clientId, challenge), ...(resource && { resource }) });
+
+    expect(eventOf('oauth.consent', (l) => l.decision === 'shown')).toMatchObject({ resourceCheck: check });
+  });
+
+  it('records a Claude request turned away for naming another server', async () => {
+    const app = makeApp();
+    const claude = 'https://claude.ai/api/mcp/auth_callback';
+    const clientId = await registerAs(app, 'Claude', claude);
+    const { challenge } = pkce();
+    await request(app)
+      .get('/oauth/authorize')
+      .query({ ...authorizeParams(clientId, challenge), redirect_uri: claude, resource: 'https://evil.test/mcp' });
+
+    expect(eventOf('oauth.consent', (l) => l.outcome === 'error')).toMatchObject({
+      reason: 'resource_mismatch',
+      clientId,
+    });
+    expect(lines.some((l) => l.decision === 'shown')).toBe(false);
+  });
+
+  it.each([
+    ['ChatGPT callback', 'Anything', 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'chatgpt'],
+    ['Claude callback', 'Anything', 'https://claude.ai/api/mcp/auth_callback', 'claude'],
+    ['Claude Code on loopback', 'Claude Code (codeqr)', 'http://localhost:51234/callback', 'claude-code'],
+    ['another loopback client', 'Codex', 'http://localhost:51234/callback', 'local'],
+    ['unknown host', 'ChatGPT', 'https://attacker.test/callback', 'other'],
+  ])('carries the attribution label on register and every consent decision: %s', async (_case, name, redirectUri, label) => {
+    const app = makeApp();
+    const clientId = await registerAs(app, name, redirectUri);
+    const { challenge } = pkce();
+    const params = { ...authorizeParams(clientId, challenge), redirect_uri: redirectUri };
+    const decide = async (decision: 'approve' | 'deny') => {
+      const shown = await request(app).get('/oauth/authorize').query(params);
+      const binding = bindingFrom(shown);
+      await request(app)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookieHeader(binding))
+        .send({ ...params, csrf_token: binding, decision });
+    };
+    await decide('approve');
+    await decide('deny');
+
+    expect(eventOf('oauth.register')).toMatchObject({ mcpClient: label });
+    const decisions = lines.filter((l) => l.event === 'oauth.consent');
+    expect(decisions.map((l) => l.decision)).toEqual(['shown', 'approve', 'shown', 'deny']);
+    for (const line of decisions) expect(line).toMatchObject({ mcpClient: label });
+  });
+
+  it('leaves client and verified as they were when the label is added', async () => {
+    const app = makeApp();
+    await registerAs(app, 'Claude Code (codeqr)', 'http://localhost:51234/callback');
+
+    expect(eventOf('oauth.register')).toMatchObject({
+      client: 'Claude Code (codeqr)',
+      verified: false,
+      mcpClient: 'claude-code',
+    });
+  });
+
   it('marks a client that merely registers as "ChatGPT" on another redirect_uri as unverified', async () => {
     const app = makeApp();
     const clientId = await registerAs(app, 'ChatGPT', CLIENT_REDIRECT);
@@ -951,6 +1023,7 @@ describe('remembered consent events', () => {
       clientId,
       client: VERIFIED_CLIENTS[verifiedRedirect]!.name,
       verified: true,
+      mcpClient: VERIFIED_CLIENTS[verifiedRedirect]!.id,
       bindingHash: hashPrefix(binding),
       userAgent: USER_AGENT,
       stateHash: hashPrefix(state),

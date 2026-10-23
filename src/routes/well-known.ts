@@ -22,6 +22,20 @@ function resourcePath(req: Request): string {
   return req.path.replace(/\/+$/, '').toLowerCase() === MCP_PATH ? MCP_PATH : '';
 }
 
+/** Whether an RFC 8707 `resource` names this server, at either path it serves MCP on. */
+export function isThisResource(resource: string, req: Request): boolean {
+  let url: URL;
+  try {
+    url = new URL(resource);
+  } catch {
+    return false;
+  }
+  if (url.origin !== new URL(getServerUrl(req)).origin || url.search || url.hash) return false;
+
+  const path = url.pathname.replace(/\/+$/, '').toLowerCase();
+  return path === '' || path === MCP_PATH;
+}
+
 /** Where the 401 sends a client to discover how to authenticate for this request's URL. */
 export function resourceMetadataUrl(req: Request): string {
   return `${getServerUrl(req)}${PROTECTED_RESOURCE_PATH}${resourcePath(req)}`;

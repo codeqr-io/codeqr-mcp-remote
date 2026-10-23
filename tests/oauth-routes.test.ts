@@ -305,10 +305,14 @@ describe('GET /oauth/authorize', () => {
     const verified = await approveWith('https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'Anything');
     const claude = await approveWith('https://claude.ai/api/mcp/auth_callback', 'Claude');
     const unknown = await approveWith('https://attacker.test/callback', 'ChatGPT');
+    const claudeCode = await approveWith('http://localhost:51234/callback', 'Claude Code (codeqr)');
+    const otherLoopback = await approveWith('http://localhost:51234/callback', 'Codex');
 
     expect(verified.get('mcp_client')).toBe('chatgpt');
     expect(claude.get('mcp_client')).toBe('claude');
     expect(unknown.get('mcp_client')).toBe('other');
+    expect(claudeCode.get('mcp_client')).toBe('claude-code');
+    expect(otherLoopback.get('mcp_client')).toBe('local');
     expect(unknown.get('state')).toBeTruthy();
   });
 

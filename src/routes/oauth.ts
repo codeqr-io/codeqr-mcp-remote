@@ -591,7 +591,7 @@ async function approveAuthorization(
     buildAuthorizeUrl({
       redirectUri: getCallbackUrl(req),
       state: brokerState,
-      mcpClient: mcpClientLabel(request.redirectUri),
+      mcpClient: mcpClientLabel(request.redirectUri, request.client.clientName),
     }),
   );
 }

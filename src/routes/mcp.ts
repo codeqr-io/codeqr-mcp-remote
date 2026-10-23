@@ -829,6 +829,8 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   onOutcome?: (outcome: ToolOutcome) => void,
 ): Promise<ToolResult> {
+  // MCP makes `arguments` optional, so a tool with nothing required can arrive without it.
+  args ??= {};
   const placeholder = placeholderDestinationIn(name, args);
   if (placeholder) {
     onOutcome?.('placeholder_destination');

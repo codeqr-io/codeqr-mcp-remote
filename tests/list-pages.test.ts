@@ -11,9 +11,8 @@ import { handleToolCall, TOOLS } from '../src/routes/mcp.js';
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
-async function call(body: unknown, name: string, args: Record<string, unknown> = {}) {
-  const requests: URL[] = [];
-  const client = new Codeqr({
+function fakeClient(body: unknown, requests: URL[]) {
+  return new Codeqr({
     apiKey: 'key',
     baseURL: 'https://api.codeqr.test',
     maxRetries: 0,
@@ -22,7 +21,11 @@ async function call(body: unknown, name: string, args: Record<string, unknown> =
       return json(body);
     },
   });
-  const result = await handleToolCall(client, 'key', name, args);
+}
+
+async function call(body: unknown, name: string, args: Record<string, unknown> = {}) {
+  const requests: URL[] = [];
+  const result = await handleToolCall(fakeClient(body, requests), 'key', name, args);
   return { result, requests, texts: result.content.map((c) => c.text) };
 }
 
@@ -46,6 +49,17 @@ describe('page size on list_links and list_qrcodes', () => {
     for (const [name] of LISTS) {
       const { requests } = await call([], name);
 
+      expect(requests[0].searchParams.get('pageSize'), name).toBe(String(DEFAULT_LIST_PAGE_SIZE));
+    }
+  });
+
+  it('answers a call that leaves arguments out, which MCP allows', async () => {
+    for (const [name] of LISTS) {
+      const requests: URL[] = [];
+      // Cast because the parameter is typed for the common case; at runtime the SDK passes undefined.
+      const result = await handleToolCall(fakeClient([], requests), 'key', name, undefined as never);
+
+      expect(result.isError, name).toBeUndefined();
       expect(requests[0].searchParams.get('pageSize'), name).toBe(String(DEFAULT_LIST_PAGE_SIZE));
     }
   });

@@ -298,6 +298,28 @@ describe('everything that is not a plan gate', () => {
     expect(isPlanLimit).toBe(false);
   });
 
+  it('tells the model to reconnect when CodeQR revoked the credential, instead of relaying the JSON', () => {
+    // The API's wording for a revoked token, as the MCP Inspector received it
+    // from api-dev.codeqr.io.
+    const error = apiError(401, 'unauthorized', 'Unauthorized: Invalid authentication token.');
+    const { message, isPlanLimit } = toClientFacingError(error);
+
+    expect(message).toMatch(/Reconnect CodeQR/);
+    expect(message).not.toContain('{');
+    expect(isPlanLimit).toBe(false);
+  });
+
+  it('passes through a 401 for an id from another workspace, which reconnecting would not fix', () => {
+    // `lib/api/links/get-link-or-throw.ts` and its QR code twin in the CodeQR repo.
+    for (const wording of ['Link does not belong to project ws_abc.', 'QR code does not belong to project ws_abc.']) {
+      const error = apiError(401, 'unauthorized', wording);
+      const { message, isPlanLimit } = toClientFacingError(error);
+
+      expect(message).toBe(error.message);
+      expect(isPlanLimit).toBe(false);
+    }
+  });
+
   it('passes a plain Error through untouched', () => {
     const { message, isPlanLimit } = toClientFacingError(new Error('Connection error.'));
 

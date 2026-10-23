@@ -24,10 +24,15 @@ import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import {
+  DEFAULT_LIST_PAGE_SIZE,
   DOMAINS_MAX_PAGE_SIZE,
+  fullPageNote,
+  LINKS_MAX_PAGE_SIZE,
   listsNoCustomDomains,
   NO_CUSTOM_DOMAINS_NOTE,
+  QRCODES_MAX_PAGE_SIZE,
   TAGS_MAX_PAGE_SIZE,
+  withDefaultPageSize,
   withPageSizeInRange,
 } from '../list-tools.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
@@ -241,7 +246,7 @@ export const SERVER_INSTRUCTIONS = [
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
-  'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
+  'Recording conversion events (leads, sales) is not available through this connection, and neither is listing them one by one; get_analytics counts them, and link objects report clicks, leads and sales counters.',
 ].join(' ');
 
 /**
@@ -377,13 +382,24 @@ const WALLET_PASS_SCHEMA = {
   },
 };
 
-export const TOOLS = [
+/**
+ * The directory's submission portal reads a tool's display name from
+ * `annotations.title` and flags every tool without one, while clients on the
+ * current spec read the top-level `title`. Both carry the same text.
+ */
+function withAnnotationTitles<T extends { title: string; annotations: object }>(tools: T[]) {
+  return tools.map((tool) => ({ ...tool, annotations: { ...tool.annotations, title: tool.title } }));
+}
+
+const API_REFERENCE = 'https://docs.codeqr.io/api-reference/endpoint';
+
+export const TOOLS = withAnnotationTitles([
   {
     name: 'create_link',
     title: 'Create Short Link',
     annotations: PUBLISHES,
     description:
-      'Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link.',
+      `Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link. CodeQR API reference: ${API_REFERENCE}/create-a-link`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -413,14 +429,20 @@ export const TOOLS = [
     name: 'list_links',
     title: 'List Short Links',
     annotations: READ_ONLY,
-    description: 'List all short links in your CodeQR workspace',
+    description: `List the short links in your CodeQR workspace, newest first, one page at a time (${DEFAULT_LIST_PAGE_SIZE} per page unless pageSize says otherwise).`,
     inputSchema: {
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: 'Search keyword (optional)' },
         domain: { type: 'string', description: 'Filter by domain (optional)' },
         tagId: { type: 'string', description: 'Filter by tag ID (optional)' },
-        page: { type: 'number', description: 'Page number (optional)' },
+        page: { type: 'number', description: 'Page number, starting at 1 (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: LINKS_MAX_PAGE_SIZE,
+          description: `Results per page (optional, defaults to ${DEFAULT_LIST_PAGE_SIZE})`,
+        },
       },
     },
   },
@@ -456,7 +478,7 @@ export const TOOLS = [
     title: 'Update Short Link',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change `key`, which rewrites the link itself and breaks every copy already in circulation.',
+      `Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change \`key\`, which rewrites the link itself and breaks every copy already in circulation. CodeQR API reference: ${API_REFERENCE}/update-a-link`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -497,7 +519,7 @@ export const TOOLS = [
     title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
-      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.`,
+      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones. CodeQR API reference: ${API_REFERENCE}/create-a-qrcode`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -540,11 +562,17 @@ export const TOOLS = [
     name: 'list_qrcodes',
     title: 'List QR Codes',
     annotations: READ_ONLY,
-    description: 'List all QR codes in your workspace',
+    description: `List the QR codes in your workspace, newest first, one page at a time (${DEFAULT_LIST_PAGE_SIZE} per page unless pageSize says otherwise).`,
     inputSchema: {
       type: 'object' as const,
       properties: {
-        page: { type: 'number', description: 'Page number (optional)' },
+        page: { type: 'number', description: 'Page number, starting at 1 (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: QRCODES_MAX_PAGE_SIZE,
+          description: `Results per page (optional, defaults to ${DEFAULT_LIST_PAGE_SIZE})`,
+        },
       },
     },
   },
@@ -557,7 +585,8 @@ export const TOOLS = [
     title: 'Update QR Code',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
+      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material. CodeQR API reference: ' +
+      `${API_REFERENCE}/update-a-qrcode`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -597,7 +626,7 @@ export const TOOLS = [
     title: 'Get Analytics',
     annotations: READ_ONLY,
     description:
-      'Get scan and click analytics — workspace-wide, or for one link or QR code. Group by time, country, city, device, or browser.',
+      'Get scan, click, lead or sale analytics — workspace-wide, or for one link or QR code — as a total, a time series, or a breakdown by country, city, device, browser, operating system or referrer, or as the top links, QR codes or destination URLs.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -677,7 +706,7 @@ export const TOOLS = [
     name: 'list_tags',
     title: 'List Tags',
     annotations: READ_ONLY,
-    description: 'List all tags in your workspace',
+    description: 'List the tags in your workspace, one page at a time.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -736,7 +765,7 @@ export const TOOLS = [
   // The second is the blocking one: asking for the scope would stop members
   // connecting at all. Restoring the tools means giving conversions their own
   // consent step, not editing this list.
-];
+]);
 
 // ── Tool Handler ─────────────────────────────────────────────────────────────
 
@@ -754,6 +783,21 @@ export const TOOLS = [
  */
 function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
+}
+
+/**
+ * Nothing upstream enforces a tool's `required`: the SDK interpolates a
+ * missing id into the path, so update_link without linkId reached the API as
+ * /links/undefined and came back as "not found", which hides what went wrong.
+ */
+function missingRequiredArgument(name: string, args: Record<string, unknown> | undefined): string | undefined {
+  const schema = TOOLS.find((t) => t.name === name)?.inputSchema as
+    | { required?: readonly string[]; properties?: Record<string, { description?: string }> }
+    | undefined;
+  const absent = (schema?.required ?? []).find((key) => args?.[key] == null || args[key] === '');
+  if (!absent) return undefined;
+  const hint = schema?.properties?.[absent]?.description;
+  return `${name} needs ${absent}${hint ? ` (${hint})` : ''}.`;
 }
 
 export interface ToolResult {
@@ -785,16 +829,26 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   onOutcome?: (outcome: ToolOutcome) => void,
 ): Promise<ToolResult> {
+  // MCP makes `arguments` optional, so a tool with nothing required can arrive without it.
+  args ??= {};
   const placeholder = placeholderDestinationIn(name, args);
   if (placeholder) {
     onOutcome?.('placeholder_destination');
     return { content: [{ type: 'text', text: `Error: ${placeholderRefusal(placeholder)}` }], isError: true };
   }
 
+  const missing = missingRequiredArgument(name, args);
+  if (missing) {
+    onOutcome?.('invalid_arguments');
+    return { content: [{ type: 'text', text: `Error: ${missing}` }], isError: true };
+  }
+
   try {
     let result: unknown;
     // The arguments the card describes; get_analytics resolves a code named by domain and key.
     let cardArgs = args;
+    // What list_links and list_qrcodes asked the API for, page size included.
+    let listArgs: Record<string, unknown> | undefined;
 
     switch (name) {
       case 'create_link': {
@@ -809,7 +863,8 @@ export async function handleToolCall(
         break;
       }
       case 'list_links':
-        result = await client.links.list(asParams<Codeqr.LinkListParams>(args));
+        listArgs = withPageSizeInRange(withDefaultPageSize(args, DEFAULT_LIST_PAGE_SIZE), LINKS_MAX_PAGE_SIZE);
+        result = await client.links.list(asParams<Codeqr.LinkListParams>(listArgs));
         break;
       case 'get_link_info':
         // Cast because the SDK's parameter type is stricter than the endpoint:
@@ -852,7 +907,8 @@ export async function handleToolCall(
         break;
       }
       case 'list_qrcodes':
-        result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(args));
+        listArgs = withPageSizeInRange(withDefaultPageSize(args, DEFAULT_LIST_PAGE_SIZE), QRCODES_MAX_PAGE_SIZE);
+        result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(listArgs));
         break;
       case 'update_qrcode': {
         const { qrcodeId, ...params } = args;
@@ -907,6 +963,8 @@ export async function handleToolCall(
     if (name === 'list_domains' && listsNoCustomDomains(args, result)) {
       response.content.push({ type: 'text', text: NO_CUSTOM_DOMAINS_NOTE });
     }
+    const morePages = listArgs && fullPageNote(listArgs, result);
+    if (morePages) response.content.push({ type: 'text', text: morePages });
     return response;
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this
@@ -1075,7 +1133,8 @@ async function withCreatedNoteAndCard(
   result: unknown,
   apiKey: string,
 ): Promise<ToolResult> {
-  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result, null, 2) }];
+  // Compact: indentation was a fifth of every response and nothing a model reads.
+  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result) }];
 
   if (name === 'get_analytics' && isUiEnabled()) {
     const card = buildAnalyticsCard(args, result, {

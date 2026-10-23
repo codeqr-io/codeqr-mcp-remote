@@ -8,25 +8,47 @@
 import { Router, type Request, type Response } from 'express';
 import { getServerUrl } from '../config.js';
 
+export const MCP_PATH = '/mcp';
+const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource';
+
+/**
+ * The MCP endpoint is served at both `/` and `/mcp`, and each is its own
+ * protected resource: Claude requires `resource` to equal the URL the user
+ * entered, path included, so the `/mcp` document lives at the RFC 9728
+ * path-suffixed location and the root one stays where it was.
+ */
+function resourcePath(req: Request): string {
+  // Express routes `/mcp/` and `/MCP` to the same handler as `/mcp`.
+  return req.path.replace(/\/+$/, '').toLowerCase() === MCP_PATH ? MCP_PATH : '';
+}
+
+/** Where the 401 sends a client to discover how to authenticate for this request's URL. */
+export function resourceMetadataUrl(req: Request): string {
+  return `${getServerUrl(req)}${PROTECTED_RESOURCE_PATH}${resourcePath(req)}`;
+}
+
 export function createWellKnownRouter(): Router {
   const router = Router();
 
   /**
    * OAuth Protected Resource Metadata (RFC 9728)
    *
-   * ChatGPT fetches this first to discover which authorization server
+   * Clients fetch this first to discover which authorization server
    * protects this resource.
    */
-  router.get('/oauth-protected-resource', (req: Request, res: Response) => {
+  const protectedResource = (path: string) => (req: Request, res: Response) => {
     const serverUrl = getServerUrl(req);
 
     res.json({
-      resource: serverUrl,
+      resource: `${serverUrl}${path}`,
       authorization_servers: [serverUrl],
       bearer_methods_supported: ['header'],
       scopes_supported: ['mcp:tools'],
     });
-  });
+  };
+
+  router.get('/oauth-protected-resource', protectedResource(''));
+  router.get(`/oauth-protected-resource${MCP_PATH}`, protectedResource(MCP_PATH));
 
   /**
    * OAuth Authorization Server Metadata (RFC 8414)

@@ -61,26 +61,43 @@ app.post('/', requireBearerToken, handleMcpRequest);
 const NOT_FOUND_BODY = {
   error: 'not_found',
   error_description: 'Endpoint not found. MCP requests should be sent to POST /mcp',
-  docs: 'https://docs.codeqr.io/mcp',
+  docs: 'https://docs.codeqr.io/mcp/introduction',
 };
 
-// GET and DELETE on /mcp are the only unknown requests logged: they show which
-// clients try a stateful session. The response is the catch-all's.
-const logMcpNotFound = (req: Request, res: Response) => {
+// This server is stateless: it offers no SSE stream to GET and no session to
+// DELETE, and the Streamable HTTP transport requires a 405 for both. A 404
+// there reads as "session not found", and the MCP SDK client (the Inspector's,
+// for one) then never sends tools/list. Logged because they show which clients
+// try a stateful session.
+const MCP_METHOD_NOT_ALLOWED_BODY = {
+  error: 'method_not_allowed',
+  error_description: 'This MCP endpoint only accepts POST: it offers no SSE stream and no session to end.',
+  docs: NOT_FOUND_BODY.docs,
+};
+
+const methodNotAllowed = (res: Response) => {
+  res.status(405).set('Allow', 'POST').json(MCP_METHOD_NOT_ALLOWED_BODY);
+};
+
+const mcpMethodNotAllowed = (req: Request, res: Response) => {
   // Express routes HEAD through app.get; a probe is not a session attempt.
   if (req.method !== 'HEAD') {
     logEvent('mcp.rejected', {
-      status: 404,
-      reason: 'not_found',
+      status: 405,
+      reason: 'method_not_allowed',
       httpMethod: req.method,
       userAgent: req.headers['user-agent'],
     });
   }
-  res.status(404).json(NOT_FOUND_BODY);
+  methodNotAllowed(res);
 };
 
-app.get('/mcp', logMcpNotFound);
-app.delete('/mcp', logMcpNotFound);
+app.get('/mcp', mcpMethodNotAllowed);
+app.delete('/mcp', mcpMethodNotAllowed);
+// The origin serves MCP too, so it answers the same way; unlogged, because
+// GET / is mostly crawlers and uptime probes rather than MCP clients.
+app.get('/', (_req, res) => methodNotAllowed(res));
+app.delete('/', (_req, res) => methodNotAllowed(res));
 
 app.use((_req, res) => {
   res.status(404).json(NOT_FOUND_BODY);

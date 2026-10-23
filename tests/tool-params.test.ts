@@ -75,7 +75,7 @@ type SubsetOf<Tool, Sdk> = Tool extends Sdk
 // The day the cast is replaced by real typing, this is the field that breaks,
 // and the fix is regenerating the SDK — not loosening the check.
 const CREATE_LINK = ['url', 'domain', 'key', 'externalId', 'tagIds', 'comments', 'expiresAt', 'password', 'trackConversion', 'proxy', 'title', 'description', 'image', 'rules'] as const;
-const LIST_LINKS = ['search', 'domain', 'tagId', 'page'] as const;
+const LIST_LINKS = ['search', 'domain', 'tagId', 'page', 'pageSize'] as const;
 // All four are keys of LinkRetrieveInfoParams; only the type's required-ness
 // is stricter than the route, which is why the handler casts.
 const GET_LINK_INFO = ['linkId', 'externalId', 'domain', 'key'] as const;
@@ -84,7 +84,7 @@ const QRCODE_PAYLOADS = ['url', 'text', 'phone', 'email', 'sms', 'wifi', 'vcard'
 const CREATE_QRCODE = [
   ...QRCODE_PAYLOADS, 'type', 'domain', 'key', 'size', 'level', 'fgColor', 'bgColor', 'title', 'static', 'walletPass',
 ] as const;
-const LIST_QRCODES = ['page'] as const;
+const LIST_QRCODES = ['page', 'pageSize'] as const;
 const UPDATE_QRCODE = [
   ...QRCODE_PAYLOADS, 'fgColor', 'bgColor', 'archived', 'title', 'walletPass',
 ] as const;

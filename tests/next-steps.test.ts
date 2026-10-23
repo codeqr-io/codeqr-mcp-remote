@@ -117,7 +117,7 @@ describe('handleToolCall create note', () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content).toHaveLength(2);
-    expect(result.content[0].text).toBe(JSON.stringify(response, null, 2));
+    expect(result.content[0].text).toBe(JSON.stringify(response));
     expect(result.content[1].text).toBe(
       nextStepsText({
         kind: 'qrcode',
@@ -203,7 +203,7 @@ describe('handleToolCall item card', () => {
     const result = await handleToolCall(stub() as never, 'key', 'create_qrcode', {});
 
     expect(result.content).toHaveLength(2);
-    expect(result.content[0].text).toBe(JSON.stringify(qr, null, 2));
+    expect(result.content[0].text).toBe(JSON.stringify(qr));
     expect(result.structuredContent).toMatchObject({ kind: 'qrcode', id: created.id, scans: 3 });
     expect(result._meta?.[ITEM_CARD_META_KEY]).toMatchObject({
       editUrl: `${config.codeqrAppUrl}/acme/qrcodes/edit?id=${created.id}&showDownload=true`,

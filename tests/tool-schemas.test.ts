@@ -70,8 +70,14 @@ describe('tool inventory', () => {
         'read_only_justification',
       ]);
       // The artifact's annotations must be the server's, not a second opinion.
+      // `title` is a label, not a hint, so it needs no justification here.
       const server = TOOLS.find((t) => t.name === name);
-      expect(entry.annotations, name).toEqual(server?.annotations);
+      const hints = server && {
+        readOnlyHint: server.annotations.readOnlyHint,
+        destructiveHint: server.annotations.destructiveHint,
+        openWorldHint: server.annotations.openWorldHint,
+      };
+      expect(entry.annotations, name).toEqual(hints);
     }
   });
 
@@ -113,8 +119,12 @@ describe('tool inventory', () => {
     expect(SERVER_INSTRUCTIONS).toContain('trackConversion');
     expect(declares('create_link', 'trackConversion')).toBe(true);
     expect(declares('update_link', 'trackConversion')).toBe(true);
-    expect(SERVER_INSTRUCTIONS).toMatch(/conversion events \(leads, sales\) is not available/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Recording conversion events \(leads, sales\) is not available/);
     expect(TOOLS.map((t) => t.name)).not.toContain('track_lead');
+    // Counting them is offered, so the instructions say so rather than
+    // denying something get_analytics does.
+    expect(SERVER_INSTRUCTIONS).toMatch(/get_analytics counts them/);
+    expect(properties('get_analytics').event?.enum).toEqual(expect.arrayContaining(['leads', 'sales']));
 
     // Smart rules are announced in the instructions, so both tools have to
     // actually take them — the A/B claim is the kind that reads as a feature
@@ -211,7 +221,20 @@ describe('annotations', () => {
         'destructiveHint',
         'openWorldHint',
         'readOnlyHint',
+        'title',
       ]);
+    }
+  });
+
+  it('repeats the title inside annotations, where the directory portal reads it', () => {
+    for (const t of TOOLS) {
+      expect(t.annotations.title, t.name).toBe(t.title);
+    }
+  });
+
+  it('points the four tools with the widest payloads at their CodeQR API reference', () => {
+    for (const name of ['create_link', 'update_link', 'create_qrcode', 'update_qrcode']) {
+      expect(tool(name).description, name).toMatch(/CodeQR API reference: https:\/\/docs\.codeqr\.io\/api-reference\/endpoint\/[a-z-]+$/);
     }
   });
 

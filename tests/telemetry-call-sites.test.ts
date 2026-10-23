@@ -854,28 +854,36 @@ describe('MCP funnel fields', () => {
     expect(lines.filter((l) => l.event === 'mcp.initialize')).toHaveLength(0);
   });
 
-  it.each(['get', 'delete'] as const)('%s /mcp answers the unknown-path 404 and logs one mcp.rejected', async (method) => {
-    const unknown = await request(indexApp).get('/no-such-path');
-    lines.length = 0;
-
+  it.each(['get', 'delete'] as const)('%s /mcp answers 405 with Allow: POST and logs one mcp.rejected', async (method) => {
     const res = await request(indexApp)[method]('/mcp').set('User-Agent', 'probe/3');
 
-    expect(res.status).toBe(404);
-    expect(res.body).toEqual(unknown.body);
+    // The transport spec's answer for a server without an SSE stream or
+    // sessions; a 404 here stops the MCP SDK client before tools/list.
+    expect(res.status).toBe(405);
+    expect(res.headers.allow).toBe('POST');
+    expect(res.body.error).toBe('method_not_allowed');
     const rejected = lines.filter((l) => l.event === 'mcp.rejected');
     expect(rejected).toHaveLength(1);
     expect(rejected[0]).toMatchObject({
-      status: 404,
-      reason: 'not_found',
+      status: 405,
+      reason: 'method_not_allowed',
       httpMethod: method.toUpperCase(),
       userAgent: 'probe/3',
     });
   });
 
-  it('HEAD /mcp answers the same 404 and logs nothing', async () => {
+  it('HEAD /mcp answers the same 405 and logs nothing', async () => {
     const res = await request(indexApp).head('/mcp');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(405);
+    expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
+  });
+
+  it.each(['get', 'delete'] as const)('%s / answers 405 too, since the origin serves MCP, and logs nothing', async (method) => {
+    const res = await request(indexApp)[method]('/').set('User-Agent', 'crawler/1');
+
+    expect(res.status).toBe(405);
+    expect(res.headers.allow).toBe('POST');
     expect(lines.filter((l) => l.event === 'mcp.rejected')).toHaveLength(0);
   });
 

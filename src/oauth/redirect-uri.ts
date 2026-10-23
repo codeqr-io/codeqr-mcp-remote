@@ -48,3 +48,29 @@ export function isAllowedRedirectUri(value: unknown): value is string {
   if (url.protocol === 'http:') return LOOPBACK_HOSTS.has(url.hostname);
   return !FORBIDDEN_SCHEMES.has(url.protocol);
 }
+
+/**
+ * Whether a redirect_uri is one the client registered.
+ *
+ * Exact, except that a loopback redirect ignores the port (RFC 8252 §7.3): a
+ * native client such as Claude Code listens on a new ephemeral port every
+ * session, so the port it registered is rarely the one it asks for later.
+ * Host, path and query still have to match, and localhost is not 127.0.0.1.
+ */
+export function isRegisteredRedirectUri(registered: readonly string[], requested: string): boolean {
+  if (registered.includes(requested)) return true;
+  const target = loopbackWithoutPort(requested);
+  return target !== undefined && registered.some((uri) => loopbackWithoutPort(uri) === target);
+}
+
+function loopbackWithoutPort(value: string): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'http:' || !LOOPBACK_HOSTS.has(url.hostname)) return undefined;
+  url.port = '';
+  return url.toString();
+}

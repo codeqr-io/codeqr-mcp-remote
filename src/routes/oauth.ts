@@ -50,7 +50,7 @@ import { isMobileUserAgent } from '../oauth/mobile.js';
 import { resolveLocale } from '../oauth/i18n/index.js';
 import { canRemember, forgetApproval, isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
-import { isAllowedRedirectUri } from '../oauth/redirect-uri.js';
+import { isAllowedRedirectUri, isRegisteredRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
 import { clientIdentity, hashPrefix, keyHashPrefix, logEvent, redirectHost, type EventFields } from '../telemetry.js';
 
@@ -487,7 +487,7 @@ async function checkAuthorizeRequest(
     return null;
   }
 
-  if (!client.redirectUris.includes(redirectUri)) {
+  if (!isRegisteredRedirectUri(client.redirectUris, redirectUri)) {
     rejectAuthorize(req, 'redirect_uri_mismatch', clientId);
     res.status(400).json({
       error: 'invalid_request',

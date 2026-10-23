@@ -14,6 +14,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { mcpClientLabel } from './oauth/mcp-client-label.js';
 import { findVerifiedClient } from './oauth/verified-clients.js';
 
 export type FunnelEvent =
@@ -39,6 +40,8 @@ export interface EventFields {
   client?: string;
   /** Whether `client` comes from verified-clients.ts rather than from what the client registered as. */
   verified?: boolean;
+  /** The `mcp_client` label sent to CodeQR for signup attribution; see mcpClientLabel(). */
+  mcpClient?: string;
   redirectHost?: string;
   /** See keyHashPrefix(). */
   keyHashPrefix?: string;
@@ -85,6 +88,7 @@ export const EVENT_FIELDS = [
   'clientId',
   'client',
   'verified',
+  'mcpClient',
   'redirectHost',
   'keyHashPrefix',
   'tool',
@@ -150,9 +154,13 @@ export function keyHashPrefix(codeqrToken: string): string {
 export function clientIdentity(
   redirectUri: string,
   clientName: string,
-): Pick<EventFields, 'client' | 'verified'> {
+): Pick<EventFields, 'client' | 'verified' | 'mcpClient'> {
   const verified = findVerifiedClient(redirectUri);
-  return { client: verified?.name ?? clientName, verified: Boolean(verified) };
+  return {
+    client: verified?.name ?? clientName,
+    verified: Boolean(verified),
+    mcpClient: mcpClientLabel(redirectUri, clientName),
+  };
 }
 
 export function redirectHost(redirectUri: string): string {

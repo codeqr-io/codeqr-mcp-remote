@@ -113,8 +113,12 @@ describe('tool inventory', () => {
     expect(SERVER_INSTRUCTIONS).toContain('trackConversion');
     expect(declares('create_link', 'trackConversion')).toBe(true);
     expect(declares('update_link', 'trackConversion')).toBe(true);
-    expect(SERVER_INSTRUCTIONS).toMatch(/conversion events \(leads, sales\) is not available/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/Recording conversion events \(leads, sales\) is not available/);
     expect(TOOLS.map((t) => t.name)).not.toContain('track_lead');
+    // Counting them is offered, so the instructions say so rather than
+    // denying something get_analytics does.
+    expect(SERVER_INSTRUCTIONS).toMatch(/get_analytics counts them/);
+    expect(properties('get_analytics').event?.enum).toEqual(expect.arrayContaining(['leads', 'sales']));
 
     // Smart rules are announced in the instructions, so both tools have to
     // actually take them — the A/B claim is the kind that reads as a feature

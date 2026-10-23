@@ -246,7 +246,7 @@ export const SERVER_INSTRUCTIONS = [
   'You can create and update short links and QR codes, read scan and click analytics, and manage domains and tags.',
   'On plans that include it, per-link conversion tracking can be toggled with trackConversion on create_link/update_link, and links can carry a custom social preview (proxy + title/description/image).',
   'Where the workspace has them, a link can carry smart rules: send traffic to different destinations by device, country, city, region, continent, UTM, referrer or language, or split it between 2-4 destinations to run an A/B test — one rule with no condition and a split. A visitor keeps the same variant for an hour, or 30 days when trackConversion is on. Read the value description before setting a condition: device means the operating system, so "mobile" matches nothing.',
-  'Recording or querying conversion events (leads, sales) is not available through this connection; link objects do report clicks, leads and sales counters.',
+  'Recording conversion events (leads, sales) is not available through this connection, and neither is listing them one by one; get_analytics counts them, and link objects report clicks, leads and sales counters.',
 ].join(' ');
 
 /**
@@ -614,7 +614,7 @@ export const TOOLS = [
     title: 'Get Analytics',
     annotations: READ_ONLY,
     description:
-      'Get scan and click analytics — workspace-wide, or for one link or QR code. Group by time, country, city, device, or browser.',
+      'Get scan, click, lead or sale analytics — workspace-wide, or for one link or QR code — as a total, a time series, or a breakdown by country, city, device, browser, operating system or referrer, or as the top links, QR codes or destination URLs.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -694,7 +694,7 @@ export const TOOLS = [
     name: 'list_tags',
     title: 'List Tags',
     annotations: READ_ONLY,
-    description: 'List all tags in your workspace',
+    description: 'List the tags in your workspace, one page at a time.',
     inputSchema: {
       type: 'object' as const,
       properties: {

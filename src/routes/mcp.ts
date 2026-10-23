@@ -24,10 +24,15 @@ import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
 import {
+  DEFAULT_LIST_PAGE_SIZE,
   DOMAINS_MAX_PAGE_SIZE,
+  fullPageNote,
+  LINKS_MAX_PAGE_SIZE,
   listsNoCustomDomains,
   NO_CUSTOM_DOMAINS_NOTE,
+  QRCODES_MAX_PAGE_SIZE,
   TAGS_MAX_PAGE_SIZE,
+  withDefaultPageSize,
   withPageSizeInRange,
 } from '../list-tools.js';
 import { asCreatedResource, nextStepsText } from '../next-steps.js';
@@ -413,14 +418,20 @@ export const TOOLS = [
     name: 'list_links',
     title: 'List Short Links',
     annotations: READ_ONLY,
-    description: 'List all short links in your CodeQR workspace',
+    description: `List the short links in your CodeQR workspace, newest first, one page at a time (${DEFAULT_LIST_PAGE_SIZE} per page unless pageSize says otherwise).`,
     inputSchema: {
       type: 'object' as const,
       properties: {
         search: { type: 'string', description: 'Search keyword (optional)' },
         domain: { type: 'string', description: 'Filter by domain (optional)' },
         tagId: { type: 'string', description: 'Filter by tag ID (optional)' },
-        page: { type: 'number', description: 'Page number (optional)' },
+        page: { type: 'number', description: 'Page number, starting at 1 (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: LINKS_MAX_PAGE_SIZE,
+          description: `Results per page (optional, defaults to ${DEFAULT_LIST_PAGE_SIZE})`,
+        },
       },
     },
   },
@@ -540,11 +551,17 @@ export const TOOLS = [
     name: 'list_qrcodes',
     title: 'List QR Codes',
     annotations: READ_ONLY,
-    description: 'List all QR codes in your workspace',
+    description: `List the QR codes in your workspace, newest first, one page at a time (${DEFAULT_LIST_PAGE_SIZE} per page unless pageSize says otherwise).`,
     inputSchema: {
       type: 'object' as const,
       properties: {
-        page: { type: 'number', description: 'Page number (optional)' },
+        page: { type: 'number', description: 'Page number, starting at 1 (optional)' },
+        pageSize: {
+          type: 'number',
+          minimum: 1,
+          maximum: QRCODES_MAX_PAGE_SIZE,
+          description: `Results per page (optional, defaults to ${DEFAULT_LIST_PAGE_SIZE})`,
+        },
       },
     },
   },
@@ -795,6 +812,8 @@ export async function handleToolCall(
     let result: unknown;
     // The arguments the card describes; get_analytics resolves a code named by domain and key.
     let cardArgs = args;
+    // What list_links and list_qrcodes asked the API for, page size included.
+    let listArgs: Record<string, unknown> | undefined;
 
     switch (name) {
       case 'create_link': {
@@ -809,7 +828,8 @@ export async function handleToolCall(
         break;
       }
       case 'list_links':
-        result = await client.links.list(asParams<Codeqr.LinkListParams>(args));
+        listArgs = withPageSizeInRange(withDefaultPageSize(args, DEFAULT_LIST_PAGE_SIZE), LINKS_MAX_PAGE_SIZE);
+        result = await client.links.list(asParams<Codeqr.LinkListParams>(listArgs));
         break;
       case 'get_link_info':
         // Cast because the SDK's parameter type is stricter than the endpoint:
@@ -852,7 +872,8 @@ export async function handleToolCall(
         break;
       }
       case 'list_qrcodes':
-        result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(args));
+        listArgs = withPageSizeInRange(withDefaultPageSize(args, DEFAULT_LIST_PAGE_SIZE), QRCODES_MAX_PAGE_SIZE);
+        result = await client.qrcodes.list(asParams<Codeqr.QrcodeListParams>(listArgs));
         break;
       case 'update_qrcode': {
         const { qrcodeId, ...params } = args;
@@ -907,6 +928,8 @@ export async function handleToolCall(
     if (name === 'list_domains' && listsNoCustomDomains(args, result)) {
       response.content.push({ type: 'text', text: NO_CUSTOM_DOMAINS_NOTE });
     }
+    const morePages = listArgs && fullPageNote(listArgs, result);
+    if (morePages) response.content.push({ type: 'text', text: morePages });
     return response;
   } catch (error) {
     // Every tool funnels through here, which is why the rewrite lives at this

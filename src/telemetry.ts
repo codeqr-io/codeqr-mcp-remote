@@ -42,6 +42,8 @@ export interface EventFields {
   verified?: boolean;
   /** The `mcp_client` label sent to CodeQR for signup attribution; see mcpClientLabel(). */
   mcpClient?: string;
+  /** Whether the authorize request's RFC 8707 `resource` named this server. */
+  resourceCheck?: 'ours' | 'other' | 'absent';
   redirectHost?: string;
   /** See keyHashPrefix(). */
   keyHashPrefix?: string;
@@ -89,6 +91,7 @@ export const EVENT_FIELDS = [
   'client',
   'verified',
   'mcpClient',
+  'resourceCheck',
   'redirectHost',
   'keyHashPrefix',
   'tool',

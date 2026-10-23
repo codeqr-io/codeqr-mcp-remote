@@ -54,7 +54,11 @@ function reportStoreFailure(operation: 'save' | 'forget' | 'read'): void {
 }
 
 export function canRemember(redirectUri: string): boolean {
-  return findVerifiedClient(redirectUri) !== undefined;
+  const verified = findVerifiedClient(redirectUri);
+  // A platform callback comes with a new client_id on every connection (Claude's
+  // connector docs), so its record would never match again, and the one record
+  // a browser keeps would push out the app-specific client's.
+  return verified !== undefined && !verified.platformCallback;
 }
 
 /** Changes whenever the access asked of the user changes, which voids what they approved. */

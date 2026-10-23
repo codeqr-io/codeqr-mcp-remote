@@ -11,9 +11,13 @@ const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 
 describe('Claude apps as a verified client', () => {
   it('is verified by its exact callback, under its own name and attribution id', () => {
-    expect(findVerifiedClient(CLAUDE_CALLBACK)).toEqual({ name: 'Claude', id: 'claude' });
+    expect(findVerifiedClient(CLAUDE_CALLBACK)).toEqual({ name: 'Claude', id: 'claude', platformCallback: true });
     expect(mcpClientLabel(CLAUDE_CALLBACK)).toBe('claude');
-    expect(canRemember(CLAUDE_CALLBACK)).toBe(true);
+  });
+
+  it('is never remembered, unlike the app-specific ChatGPT callback', () => {
+    expect(canRemember(CLAUDE_CALLBACK)).toBe(false);
+    expect(canRemember('https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ')).toBe(true);
   });
 
   it('shows the verified badge and an initial, never a logo, on the consent page', () => {

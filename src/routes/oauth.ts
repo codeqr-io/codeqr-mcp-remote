@@ -50,6 +50,8 @@ import { isMobileUserAgent } from '../oauth/mobile.js';
 import { resolveLocale } from '../oauth/i18n/index.js';
 import { canRemember, forgetApproval, isRemembered, rememberApproval } from '../oauth/remembered-consent.js';
 import { mcpClientLabel } from '../oauth/mcp-client-label.js';
+import { findVerifiedClient } from '../oauth/verified-clients.js';
+import { isThisResource } from './well-known.js';
 import { isAllowedRedirectUri, isRegisteredRedirectUri } from '../oauth/redirect-uri.js';
 import { CODEQR_OAUTH_SCOPES, getCallbackUrl, hasCodeQROAuthCredentials } from '../config.js';
 import { clientIdentity, hashPrefix, keyHashPrefix, logEvent, redirectHost, type EventFields } from '../telemetry.js';
@@ -157,6 +159,7 @@ export function createOAuthRouter(): Router {
     logEvent('oauth.consent', {
       decision: 'shown',
       clientId: request.client.clientId,
+      resourceCheck: request.resourceCheck,
       ...consentTrace(req, binding),
       ...clientIdentity(request.redirectUri, request.client.clientName),
     });
@@ -266,7 +269,9 @@ export function createOAuthRouter(): Router {
     // The user pressed Refuse, or CodeQR turned the request down. Either way the
     // client is told, per RFC 6749 §4.1.2.1, instead of being left waiting.
     if (error) {
-      await forgetApproval(req, res);
+      // Only what this flow could have remembered is forgotten, so refusing
+      // another client keeps a verified client's screen skipped.
+      if (canRemember(pending.redirectUri)) await forgetApproval(req, res);
       logEvent('oauth.callback', {
         outcome: 'error',
         reason: `codeqr_${error}`,
@@ -286,7 +291,7 @@ export function createOAuthRouter(): Router {
     }
 
     if (!code) {
-      await forgetApproval(req, res);
+      if (canRemember(pending.redirectUri)) await forgetApproval(req, res);
       logEvent('oauth.callback', {
         outcome: 'error',
         reason: 'no_code',
@@ -443,7 +448,10 @@ interface AuthorizeRequest {
   codeChallengeMethod: string;
   clientState?: string;
   scope: string;
+  resourceCheck: ResourceCheck;
 }
+
+type ResourceCheck = NonNullable<EventFields['resourceCheck']>;
 
 /**
  * Validation shared by showing the consent screen and acting on it, so the
@@ -514,6 +522,19 @@ async function checkAuthorizeRequest(
     return null;
   }
 
+  // On a platform callback the verified name says which platform, not which
+  // connector: a connector on it that sends people here must be connecting to
+  // this server, or it could redeem the code against another. Only the screen's
+  // GET carries `resource`; the form's POST cannot reach here without the
+  // binding that GET issued.
+  const resource = param(input.resource);
+  const resourceCheck: ResourceCheck = !resource ? 'absent' : isThisResource(resource, req) ? 'ours' : 'other';
+  if (resourceCheck === 'other' && findVerifiedClient(redirectUri)?.platformCallback) {
+    rejectAuthorize(req, 'resource_mismatch', clientId);
+    redirectWithError(res, redirectUri, 'invalid_target', 'resource does not name this MCP server', clientState);
+    return null;
+  }
+
   if (!codeChallenge || codeChallengeMethod !== 'S256') {
     rejectAuthorize(req, 'pkce_required', clientId);
     redirectWithError(
@@ -545,6 +566,7 @@ async function checkAuthorizeRequest(
     codeChallengeMethod,
     clientState,
     scope: scope || 'mcp:tools',
+    resourceCheck,
   };
 }
 

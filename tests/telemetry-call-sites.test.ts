@@ -486,6 +486,38 @@ describe('verified client identity', () => {
   });
 
   it.each([
+    ['names this server', 'http://mcp.example.test/mcp', 'ours'],
+    ['names another server', 'https://evil.test/mcp', 'other'],
+    ['is absent', undefined, 'absent'],
+  ])('records on the shown screen whether the resource %s', async (_case, resource, check) => {
+    const app = makeApp();
+    const clientId = await registerAs(app, 'Anything', CLIENT_REDIRECT);
+    const { challenge } = pkce();
+    await request(app)
+      .get('/oauth/authorize')
+      .set('Host', 'mcp.example.test')
+      .query({ ...authorizeParams(clientId, challenge), ...(resource && { resource }) });
+
+    expect(eventOf('oauth.consent', (l) => l.decision === 'shown')).toMatchObject({ resourceCheck: check });
+  });
+
+  it('records a Claude request turned away for naming another server', async () => {
+    const app = makeApp();
+    const claude = 'https://claude.ai/api/mcp/auth_callback';
+    const clientId = await registerAs(app, 'Claude', claude);
+    const { challenge } = pkce();
+    await request(app)
+      .get('/oauth/authorize')
+      .query({ ...authorizeParams(clientId, challenge), redirect_uri: claude, resource: 'https://evil.test/mcp' });
+
+    expect(eventOf('oauth.consent', (l) => l.outcome === 'error')).toMatchObject({
+      reason: 'resource_mismatch',
+      clientId,
+    });
+    expect(lines.some((l) => l.decision === 'shown')).toBe(false);
+  });
+
+  it.each([
     ['ChatGPT callback', 'Anything', 'https://chatgpt.com/connector/oauth/fcLW7Kbi1AnJ', 'chatgpt'],
     ['Claude callback', 'Anything', 'https://claude.ai/api/mcp/auth_callback', 'claude'],
     ['Claude Code on loopback', 'Claude Code (codeqr)', 'http://localhost:51234/callback', 'claude-code'],

@@ -1098,7 +1098,8 @@ async function withCreatedNoteAndCard(
   result: unknown,
   apiKey: string,
 ): Promise<ToolResult> {
-  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result, null, 2) }];
+  // Compact: indentation was a fifth of every response and nothing a model reads.
+  const content: ToolResult['content'] = [{ type: 'text', text: JSON.stringify(result) }];
 
   if (name === 'get_analytics' && isUiEnabled()) {
     const card = buildAnalyticsCard(args, result, {

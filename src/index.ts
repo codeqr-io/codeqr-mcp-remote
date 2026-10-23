@@ -61,7 +61,7 @@ app.post('/', requireBearerToken, handleMcpRequest);
 const NOT_FOUND_BODY = {
   error: 'not_found',
   error_description: 'Endpoint not found. MCP requests should be sent to POST /mcp',
-  docs: 'https://docs.codeqr.io/mcp',
+  docs: 'https://docs.codeqr.io/mcp/introduction',
 };
 
 // GET and DELETE on /mcp are the only unknown requests logged: they show which

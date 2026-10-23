@@ -382,13 +382,24 @@ const WALLET_PASS_SCHEMA = {
   },
 };
 
-export const TOOLS = [
+/**
+ * The directory's submission portal reads a tool's display name from
+ * `annotations.title` and flags every tool without one, while clients on the
+ * current spec read the top-level `title`. Both carry the same text.
+ */
+function withAnnotationTitles<T extends { title: string; annotations: object }>(tools: T[]) {
+  return tools.map((tool) => ({ ...tool, annotations: { ...tool.annotations, title: tool.title } }));
+}
+
+const API_REFERENCE = 'https://docs.codeqr.io/api-reference/endpoint';
+
+export const TOOLS = withAnnotationTitles([
   {
     name: 'create_link',
     title: 'Create Short Link',
     annotations: PUBLISHES,
     description:
-      'Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link.',
+      `Create a trackable short link. The link is a live endpoint: it keeps resolving after this conversation ends, and its destination can be changed later with update_link. CodeQR API reference: ${API_REFERENCE}/create-a-link`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -467,7 +478,7 @@ export const TOOLS = [
     title: 'Update Short Link',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change `key`, which rewrites the link itself and breaks every copy already in circulation.',
+      `Change where an existing short link points. Anything already shared keeps working and now leads to the new destination — unless you also change \`key\`, which rewrites the link itself and breaks every copy already in circulation. CodeQR API reference: ${API_REFERENCE}/update-a-link`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -508,7 +519,7 @@ export const TOOLS = [
     title: 'Create QR Code',
     annotations: PUBLISHES,
     description:
-      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones.`,
+      `Create a QR code. It can encode a destination URL, or Wi-Fi credentials, a contact card, a WhatsApp conversation, an email, an SMS, a phone number, plain text or a crypto payment request. By default the code is dynamic: it encodes a short link rather than the content itself, so what it leads to can be changed later with update_qrcode without reprinting anything, and every scan is recorded. A ${STATIC_TYPES_IN_WORDS} code can be made static instead, when the person asks for one (see static). Pass the payload field matching the type you choose. Use walletPass to brand the wallet pass saved from the code with your own name and logo instead of the workspace ones. CodeQR API reference: ${API_REFERENCE}/create-a-qrcode`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -574,7 +585,8 @@ export const TOOLS = [
     title: 'Update QR Code',
     annotations: REWRITES_PUBLIC,
     description:
-      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material.',
+      'Change what a dynamic QR code leads to, without reprinting it: the printed pattern encodes a short link, so copies already distributed now resolve to the new content. Pass the payload field matching the type the code ALREADY has — url for a link code, wifi for a Wi-Fi code, and so on. A code cannot be converted from one type to another here: sending a wifi payload to a url code is accepted and silently changes nothing, so check the type with list_qrcodes first if you are unsure. This does NOT apply to static QR codes, which encode the content directly in the printed pattern — for those, the stored record changes but anything already printed keeps leading to the old content forever. Check whether the code is static before promising the change reaches printed material. CodeQR API reference: ' +
+      `${API_REFERENCE}/update-a-qrcode`,
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -753,7 +765,7 @@ export const TOOLS = [
   // The second is the blocking one: asking for the scope would stop members
   // connecting at all. Restoring the tools means giving conversions their own
   // consent step, not editing this list.
-];
+]);
 
 // ── Tool Handler ─────────────────────────────────────────────────────────────
 

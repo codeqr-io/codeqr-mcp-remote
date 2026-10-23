@@ -70,8 +70,14 @@ describe('tool inventory', () => {
         'read_only_justification',
       ]);
       // The artifact's annotations must be the server's, not a second opinion.
+      // `title` is a label, not a hint, so it needs no justification here.
       const server = TOOLS.find((t) => t.name === name);
-      expect(entry.annotations, name).toEqual(server?.annotations);
+      const hints = server && {
+        readOnlyHint: server.annotations.readOnlyHint,
+        destructiveHint: server.annotations.destructiveHint,
+        openWorldHint: server.annotations.openWorldHint,
+      };
+      expect(entry.annotations, name).toEqual(hints);
     }
   });
 
@@ -215,7 +221,20 @@ describe('annotations', () => {
         'destructiveHint',
         'openWorldHint',
         'readOnlyHint',
+        'title',
       ]);
+    }
+  });
+
+  it('repeats the title inside annotations, where the directory portal reads it', () => {
+    for (const t of TOOLS) {
+      expect(t.annotations.title, t.name).toBe(t.title);
+    }
+  });
+
+  it('points the four tools with the widest payloads at their CodeQR API reference', () => {
+    for (const name of ['create_link', 'update_link', 'create_qrcode', 'update_qrcode']) {
+      expect(tool(name).description, name).toMatch(/CodeQR API reference: https:\/\/docs\.codeqr\.io\/api-reference\/endpoint\/[a-z-]+$/);
     }
   });
 

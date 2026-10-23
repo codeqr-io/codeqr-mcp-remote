@@ -247,6 +247,17 @@ export function toClientFacingError(error: unknown, call?: ToolCall): ClientFaci
     return { message: raw, isPlanLimit: false };
   }
 
+  // The session got past this server, so CodeQR revoked the credential behind
+  // it — most often because the person connected CodeQR to another app, which
+  // replaces this one's authorization. No retry fixes that; reconnecting does.
+  if (code === 'unauthorized') {
+    return {
+      message:
+        'CodeQR no longer accepts this connection: its access was revoked, for example by connecting CodeQR to another app or removing it under Settings → Integrations. Reconnect CodeQR in this app, then try again.',
+      isPlanLimit: false,
+    };
+  }
+
   if (!PLAN_WORDING.test(raw)) {
     return { message: raw, isPlanLimit: false };
   }

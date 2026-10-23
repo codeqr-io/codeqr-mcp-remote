@@ -298,6 +298,17 @@ describe('everything that is not a plan gate', () => {
     expect(isPlanLimit).toBe(false);
   });
 
+  it('tells the model to reconnect when CodeQR revoked the credential, instead of relaying the JSON', () => {
+    // The API's wording for a revoked token, as the MCP Inspector received it
+    // from api-dev.codeqr.io.
+    const error = apiError(401, 'unauthorized', 'Unauthorized: Invalid authentication token.');
+    const { message, isPlanLimit } = toClientFacingError(error);
+
+    expect(message).toMatch(/Reconnect CodeQR/);
+    expect(message).not.toContain('{');
+    expect(isPlanLimit).toBe(false);
+  });
+
   it('passes a plain Error through untouched', () => {
     const { message, isPlanLimit } = toClientFacingError(new Error('Connection error.'));
 

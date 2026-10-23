@@ -34,6 +34,10 @@ export const VERIFIED_CLIENTS: Record<string, VerifiedClient> = {
     id: 'chatgpt',
     logo: CHATGPT_LOGO_DATA_URI,
   },
+  // The one callback every hosted Claude app (web, Desktop, mobile) uses. No
+  // logo: Anthropic's trademark guidelines require prior approval to use their
+  // marks, so the screen shows the name only.
+  'https://claude.ai/api/mcp/auth_callback': { name: 'Claude', id: 'claude' },
 };
 
 export function findVerifiedClient(redirectUri: string): VerifiedClient | undefined {

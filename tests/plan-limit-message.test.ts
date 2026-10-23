@@ -309,6 +309,17 @@ describe('everything that is not a plan gate', () => {
     expect(isPlanLimit).toBe(false);
   });
 
+  it('passes through a 401 for an id from another workspace, which reconnecting would not fix', () => {
+    // `lib/api/links/get-link-or-throw.ts` and its QR code twin in the CodeQR repo.
+    for (const wording of ['Link does not belong to project ws_abc.', 'QR code does not belong to project ws_abc.']) {
+      const error = apiError(401, 'unauthorized', wording);
+      const { message, isPlanLimit } = toClientFacingError(error);
+
+      expect(message).toBe(error.message);
+      expect(isPlanLimit).toBe(false);
+    }
+  });
+
   it('passes a plain Error through untouched', () => {
     const { message, isPlanLimit } = toClientFacingError(new Error('Connection error.'));
 

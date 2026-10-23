@@ -25,6 +25,10 @@
 export const LIMIT_DETAILS_URL =
   'https://codeqr.io/pricing?utm_source=mcp&utm_medium=mcp&utm_campaign=codeqr-mcp&utm_content=limit-reached';
 
+// The 401 wordings of lib/auth in the CodeQR repo for a credential it no longer accepts.
+const REVOKED_CREDENTIAL =
+  /invalid (api key|authentication token)|access token (expired|not found)|token has been (revoked|invalidated)|login required/i;
+
 /**
  * Wording that must not reach the client.
  *
@@ -250,7 +254,10 @@ export function toClientFacingError(error: unknown, call?: ToolCall): ClientFaci
   // The session got past this server, so CodeQR revoked the credential behind
   // it — most often because the person connected CodeQR to another app, which
   // replaces this one's authorization. No retry fixes that; reconnecting does.
-  if (code === 'unauthorized') {
+  // The API also answers 401 for an id from another workspace ("Link does not
+  // belong to project …"), which reconnecting would not fix, so only the
+  // credential wordings get this sentence.
+  if (code === 'unauthorized' && REVOKED_CREDENTIAL.test(raw)) {
     return {
       message:
         'CodeQR no longer accepts this connection: its access was revoked, for example by connecting CodeQR to another app or removing it under Settings → Integrations. Reconnect CodeQR in this app, then try again.',

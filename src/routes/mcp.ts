@@ -773,6 +773,21 @@ function asParams<T>(args: Record<string, unknown>): T {
   return args as T;
 }
 
+/**
+ * Nothing upstream enforces a tool's `required`: the SDK interpolates a
+ * missing id into the path, so update_link without linkId reached the API as
+ * /links/undefined and came back as "not found", which hides what went wrong.
+ */
+function missingRequiredArgument(name: string, args: Record<string, unknown> | undefined): string | undefined {
+  const schema = TOOLS.find((t) => t.name === name)?.inputSchema as
+    | { required?: readonly string[]; properties?: Record<string, { description?: string }> }
+    | undefined;
+  const absent = (schema?.required ?? []).find((key) => args?.[key] == null || args[key] === '');
+  if (!absent) return undefined;
+  const hint = schema?.properties?.[absent]?.description;
+  return `${name} needs ${absent}${hint ? ` (${hint})` : ''}.`;
+}
+
 export interface ToolResult {
   content: Array<{ type: 'text'; text: string }>;
   structuredContent?: Record<string, unknown>;
@@ -806,6 +821,12 @@ export async function handleToolCall(
   if (placeholder) {
     onOutcome?.('placeholder_destination');
     return { content: [{ type: 'text', text: `Error: ${placeholderRefusal(placeholder)}` }], isError: true };
+  }
+
+  const missing = missingRequiredArgument(name, args);
+  if (missing) {
+    onOutcome?.('invalid_arguments');
+    return { content: [{ type: 'text', text: `Error: ${missing}` }], isError: true };
   }
 
   try {

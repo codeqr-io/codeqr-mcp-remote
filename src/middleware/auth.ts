@@ -10,7 +10,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { validateAccessToken } from '../oauth/store.js';
 import { resolveCodeQRToken } from '../oauth/refresh.js';
 import { CodeQROAuthError } from '../oauth/codeqr-oauth.js';
-import { getServerUrl } from '../config.js';
+import { resourceMetadataUrl } from '../routes/well-known.js';
 import { keyHashPrefix, logEvent } from '../telemetry.js';
 
 declare global {
@@ -47,7 +47,7 @@ function unauthorized(req: Request, res: Response, error: string, description: s
       `Bearer realm="codeqr-mcp"`,
       `error="${error}"`,
       `error_description="${description}"`,
-      `resource_metadata="${getServerUrl(req)}/.well-known/oauth-protected-resource"`,
+      `resource_metadata="${resourceMetadataUrl(req)}"`,
     ].join(', '),
   );
   res.status(401).json({ error, error_description: description });

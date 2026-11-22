@@ -21,6 +21,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import { config, SERVER_VERSION } from './config.js';
+import { ICON_PATH, ICON_PNG } from './icon.js';
 import { createWellKnownRouter } from './routes/well-known.js';
 import { createOAuthRouter } from './routes/oauth.js';
 import { handleMcpRequest } from './routes/mcp.js';
@@ -39,6 +40,12 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'codeqr-mcp-remote', version: SERVER_VERSION });
+});
+
+// ── Icon (no auth) ──────────────────────────────────────────────────────────
+
+app.get(ICON_PATH, (_req, res) => {
+  res.type('png').set('Cache-Control', 'public, max-age=86400').send(ICON_PNG);
 });
 
 // ── Well-Known endpoints (no auth) ──────────────────────────────────────────

@@ -19,7 +19,8 @@ import {
 import Codeqr from '@codeqr/ts';
 import type { Request, Response } from 'express';
 import { getWorkspace } from '../codeqr/workspace.js';
-import { config, isUiEnabled, SERVER_VERSION } from '../config.js';
+import { config, getServerUrl, isUiEnabled, SERVER_VERSION } from '../config.js';
+import { serverIcons } from '../icon.js';
 import { buildAnalyticsCard } from '../analytics-card.js';
 import { resolveAnalyticsQuery } from '../analytics-query.js';
 import { buildItemCard, isItemCardTool, itemCardKind } from '../item-card.js';
@@ -1002,7 +1003,7 @@ export async function handleMcpRequest(req: Request, res: Response): Promise<voi
   // report in diagnostics.
   const uiEnabled = isUiEnabled();
   const server = new McpServer(
-    { name: 'codeqr', version: SERVER_VERSION },
+    { name: 'codeqr', version: SERVER_VERSION, icons: serverIcons(getServerUrl(req)) },
     {
       instructions: SERVER_INSTRUCTIONS,
       // `resources` serves the item card's template (widgets/index.ts), and

@@ -3,8 +3,17 @@
   "name": "io.codeqr/codeqr",
   "title": "CodeQR",
   "description": "Managed QR codes and short links from any MCP client — re-point after printing, see every scan.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "websiteUrl": "https://codeqr.io",
+  "icons": [
+    {
+      "src": "https://mcp.codeqr.io/icon.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
   "repository": {
     "url": "https://github.com/codeqr-io/codeqr-mcp-remote",
     "source": "github",
